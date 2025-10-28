@@ -14,7 +14,7 @@ import org.springframework.context.annotation.Configuration;
  * @created 2025/5/13 14:46
  */
 @Configuration
-@MapperScan("com.manneia.baiwangbasic.mapper")
+@MapperScan("com.manneia.swgx.basic.mapper")
 public class MyBatisPlusConfig {
 
     @Bean
