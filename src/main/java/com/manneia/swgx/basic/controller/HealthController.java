@@ -1,8 +1,8 @@
 package com.manneia.swgx.basic.controller;
 
-import com.manneia.baiwangbasic.common.response.SingleResponse;
-import com.manneia.baiwangbasic.service.HealthService;
-import com.manneia.baiwangbasic.vo.Result;
+import com.manneia.swgx.basic.common.response.SingleResponse;
+import com.manneia.swgx.basic.service.HealthService;
+import com.manneia.swgx.basic.vo.Result;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;

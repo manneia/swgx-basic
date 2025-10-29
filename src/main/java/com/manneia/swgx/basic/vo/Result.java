@@ -1,10 +1,10 @@
 package com.manneia.swgx.basic.vo;
 
-import com.manneia.baiwangbasic.common.response.SingleResponse;
+import com.manneia.swgx.basic.common.response.SingleResponse;
 import lombok.Getter;
 import lombok.Setter;
 
-import static com.manneia.baiwangbasic.common.response.ResponseCode.SUCCESS;
+import static com.manneia.swgx.basic.common.response.ResponseCode.SUCCESS;
 
 /**
  * @author luokaixuan
@@ -13,6 +13,7 @@ import static com.manneia.baiwangbasic.common.response.ResponseCode.SUCCESS;
  */
 @Getter
 @Setter
+@SuppressWarnings("unused")
 public class Result<T> {
 
     /**

@@ -2,3 +2,8 @@ server:
   port: 7094
   servlet:
     context-path: /customize
+
+customize:
+  query-company-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/queryUniqueSign
+  query-goods-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/query/goods
+  push-invoice-doc-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/addReceiptUrl

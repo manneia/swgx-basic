@@ -1,5 +1,6 @@
 package com.manneia.swgx.basic.config;
 
+import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -9,19 +10,24 @@ import org.springframework.context.annotation.Configuration;
  * @created 2025/5/13 15:18
  */
 @Configuration
+@Data
 @SuppressWarnings("unused")
 @ConfigurationProperties(prefix = "customize")
 public class CustomizeUrlConfig {
 
     /**
-     * 流水单上传接口
+     * 获取企业信息接口
      */
-    private String uploadLsdUrl;
+    private String queryCompanyInfoUrl;
 
     /**
-     * 发票开具接口
+     * 查询商品信息接口
      */
-    private String invoiceIssueUrl;
+    private String queryGoodsInfoUrl;
 
+    /**
+     * 推送单据接口
+     */
+    private String pushInvoiceDocUrl;
 
 }

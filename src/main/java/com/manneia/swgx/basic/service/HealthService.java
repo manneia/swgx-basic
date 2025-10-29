@@ -1,7 +1,7 @@
 package com.manneia.swgx.basic.service;
 
 
-import com.manneia.baiwangbasic.common.response.SingleResponse;
+import com.manneia.swgx.basic.common.response.SingleResponse;
 
 /**
  * @author luokaixuan

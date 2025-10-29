@@ -1,7 +1,7 @@
 package com.manneia.swgx.basic.service.impl;
 
-import com.manneia.baiwangbasic.common.response.SingleResponse;
-import com.manneia.baiwangbasic.service.HealthService;
+import com.manneia.swgx.basic.common.response.SingleResponse;
+import com.manneia.swgx.basic.service.HealthService;
 import org.springframework.stereotype.Service;
 
 /**
