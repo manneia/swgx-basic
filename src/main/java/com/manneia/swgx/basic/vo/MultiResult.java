@@ -5,7 +5,7 @@ import lombok.Setter;
 
 import java.util.List;
 
-import static com.manneia.baiwangbasic.common.response.ResponseCode.SUCCESS;
+import static com.manneia.swgx.basic.common.response.ResponseCode.SUCCESS;
 
 /**
  * @author luokaixuan
@@ -14,6 +14,7 @@ import static com.manneia.baiwangbasic.common.response.ResponseCode.SUCCESS;
  */
 @Getter
 @Setter
+@SuppressWarnings("unused")
 public class MultiResult<T> extends Result<List<T>> {
 
     /**
