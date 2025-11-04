@@ -183,6 +183,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     goodsList.add(originalGoodsLine);
                 }
             } catch (Exception e) {
+                log.error("折扣行处理失败:{}", toJSONString(e));
                 throw new BizException("折扣行处理失败", BizErrorCode.DISCOUNT_GOODS_LIST_HANDLER_ERROR);
             }
         }
