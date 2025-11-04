@@ -18,9 +18,12 @@ import org.apache.commons.lang.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static com.alibaba.fastjson.JSON.toJSONString;
 
@@ -100,6 +103,11 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
         pushInvoiceDocJsonRequest.put(BasicKey.LOGIN_ACCOUNT, loginAccount);
         pushInvoiceDocJsonRequest.put(BasicKey.REMARKS, remarks);
         JSONArray goodsList = new JSONArray();
+        // 原价商品列表
+        BigDecimal originalGoodsTotalPrice = BigDecimal.ZERO;
+        // 计算折扣商品列表
+        JSONArray discountGoodsList = new JSONArray();
+        BigDecimal discountGoodsTotalPrice = BigDecimal.ZERO;
         for (PushInvoiceDocDetail invoiceDocDetail : invoiceDocDetails) {
             //2.1 查询商品信息
             JSONObject queryProductRequest = new JSONObject();
@@ -129,27 +137,99 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                 pushInvoiceDocResponse.setErrorMessage("商品编码: " + invoiceDocDetail.getGoodsPersonalCode() + " 在百旺系统不存在,请维护该商品");
                 return SingleResponse.of(pushInvoiceDocResponse);
             }
-
-            for (int i = 0; i < goodsDetails.size(); i++) {
-                JSONObject goodsDetail = goodsDetails.getJSONObject(i);
-                JSONObject goods = new JSONObject();
-                goods.put(BasicKey.GOODS_NAME, goodsDetail.getString(BasicKey.GOODS_NAME));
-                goods.put(BasicKey.GOODS_CODE, goodsDetail.getString(BasicKey.GOODS_CODE));
-                goods.put(BasicKey.GOODS_SPECIFICATION, goodsDetail.getString(BasicKey.GOODS_SPECIFICATION));
-                goods.put(BasicKey.GOODS_UNIT, goodsDetail.getString(BasicKey.GOODS_UNIT));
-                goods.put(BasicKey.GOODS_PRICE, goodsDetail.getString(BasicKey.GOODS_PRICE));
-                goods.put(BasicKey.GOODS_QUANTITY, invoiceDocDetail.getGoodsQuantity());
-                goods.put(BasicKey.GOODS_TOTAL_PRICE_TAX, invoiceDocDetail.getGoodsTotalPriceTax());
-                goods.put(BasicKey.GOODS_TOTAL_TAX, invoiceDocDetail.getGoodsTotalTax());
-                goods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
-                goods.put(BasicKey.INVOICE_ITEM_TYPE, "0");
-                goods.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
-                goodsList.add(goods);
+            String goodsDiscountType = invoiceDocDetail.getGoodsDiscountType();
+            if ("0".equals(goodsDiscountType)) {
+                for (int i = 0; i < goodsDetails.size(); i++) {
+                    JSONObject goodsDetail = goodsDetails.getJSONObject(i);
+                    originalGoodsTotalPrice = originalGoodsTotalPrice.add(invoiceDocDetail.getGoodsTotalPriceTax());
+                    JSONObject goods = new JSONObject();
+                    handlerDiscountInfo(invoiceDocDetail, goodsDetail, goods);
+                    goods.put(BasicKey.GOODS_TOTAL_PRICE_TAX, invoiceDocDetail.getGoodsTotalPriceTax());
+                    goods.put(BasicKey.GOODS_TOTAL_TAX, invoiceDocDetail.getGoodsTotalTax());
+                    goods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
+                    goods.put(BasicKey.INVOICE_ITEM_TYPE, "0");
+                    goods.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
+                    goodsList.add(goods);
+                }
+            }
+            if ("2".equals(goodsDiscountType)) {
+                for (int i = 0; i < goodsDetails.size(); i++) {
+                    JSONObject goodsDetail = goodsDetails.getJSONObject(i);
+                    discountGoodsTotalPrice = discountGoodsTotalPrice.add(new BigDecimal(goodsDetail.getString(BasicKey.GOODS_PRICE)));
+                    discountGoodsList.add(goodsDetail);
+                }
+            }
+        }
+        // 处理计算折扣商品
+        if (CollUtil.isNotEmpty(discountGoodsList)) {
+            // 减去原价商品
+            BigDecimal discountedAmount = invoiceTotalPriceTax.subtract(originalGoodsTotalPrice);
+            BigDecimal discountPrice = discountedAmount.subtract(discountGoodsTotalPrice);
+            BigDecimal discountRate = discountPrice.divide(discountGoodsTotalPrice, 7, RoundingMode.HALF_UP);
+            // 根据折扣率处理待折扣商品，生成折扣行，折扣行金额为负数，fphxz为1，折扣额为含税金额*折扣率，，被折扣行金额为整数，fphxz为2
+            Map<String, PushInvoiceDocDetail> docDetailMap = invoiceDocDetails.stream().collect(Collectors.toMap(PushInvoiceDocDetail::getGoodsPersonalCode, invoiceDocDetail -> invoiceDocDetail));
+            for (int i = 0; i < discountGoodsList.size(); i++) {
+                JSONObject goodInfo = discountGoodsList.getJSONObject(i);
+                String goodsZxbm = goodInfo.getString(BasicKey.GOODS_PERSONAL_CODE);
+                PushInvoiceDocDetail pushInvoiceDocDetail = docDetailMap.get(goodsZxbm);
+                // 创建折扣行（fphxz=1，金额为负数）
+                JSONObject discountLine = getDiscountGoodsLine(discountPrice, pushInvoiceDocDetail, goodInfo, discountRate);
+                goodsList.add(discountLine);
+                // 创建被折扣行（fphxz=2，金额为正数）
+                JSONObject originalGoodsLine = getOriginalGoodsLine(discountedAmount, pushInvoiceDocDetail, goodInfo, pushInvoiceDocDetail.getGoodsTotalPriceTax(), discountRate);
+                goodsList.add(originalGoodsLine);
             }
         }
         pushInvoiceDocJsonRequest.put(BasicKey.PRODUCT_PARAMS, goodsList);
         // 3. 调用单据推送接口
         return pushInvoiceDoc(pushInvoiceDocJsonRequest, pushInvoiceDocResponse);
+    }
+
+    private static JSONObject getDiscountGoodsLine(BigDecimal discountPrice, PushInvoiceDocDetail invoiceDocDetail, JSONObject goodInfo, BigDecimal discountRate) {
+        JSONObject discountLine = new JSONObject();
+        handlerDiscountInfo(invoiceDocDetail, goodInfo, discountLine);
+
+        // 金额为负数
+        discountLine.put(BasicKey.GOODS_TOTAL_PRICE_TAX, discountPrice);
+
+        // 计算折扣税额，保持负数
+        BigDecimal discountTax = discountPrice
+                .multiply(new BigDecimal(goodInfo.getString(BasicKey.VAT_RATE)))
+                .setScale(2, RoundingMode.HALF_UP);
+        // 税额也为负数
+        discountLine.put(BasicKey.GOODS_TOTAL_TAX, discountTax.negate());
+        discountLine.put(BasicKey.GOODS_TAX_RATE, goodInfo.getString(BasicKey.VAT_RATE));
+        // 折扣行标识
+        discountLine.put(BasicKey.INVOICE_ITEM_TYPE, "1");
+        discountLine.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
+        return discountLine;
+    }
+
+
+    private static JSONObject getOriginalGoodsLine(BigDecimal discountedAmount, PushInvoiceDocDetail invoiceDocDetail, JSONObject goodInfo, BigDecimal originalPriceTax, BigDecimal discountRate) {
+        JSONObject originalGoodsLine = new JSONObject();
+        handlerDiscountInfo(invoiceDocDetail, goodInfo, originalGoodsLine);
+
+        originalGoodsLine.put(BasicKey.GOODS_TOTAL_PRICE_TAX, discountedAmount);
+        // 税额为正数
+        BigDecimal originalTax = discountedAmount
+                .multiply(new BigDecimal(goodInfo.getString(BasicKey.VAT_RATE)))
+                .setScale(2, RoundingMode.HALF_UP);
+        originalGoodsLine.put(BasicKey.GOODS_TOTAL_TAX, originalTax);
+        originalGoodsLine.put(BasicKey.GOODS_TAX_RATE, goodInfo.getString(BasicKey.VAT_RATE));
+        // 被折扣行标识
+        originalGoodsLine.put(BasicKey.INVOICE_ITEM_TYPE, "2");
+        originalGoodsLine.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
+        return originalGoodsLine;
+    }
+
+    private static void handlerDiscountInfo(PushInvoiceDocDetail invoiceDocDetail, JSONObject goodInfo, JSONObject originalGoodsLine) {
+        originalGoodsLine.put(BasicKey.GOODS_NAME, goodInfo.getString(BasicKey.GOODS_NAME));
+        originalGoodsLine.put(BasicKey.GOODS_CODE, goodInfo.getString(BasicKey.GOODS_CODE));
+        originalGoodsLine.put(BasicKey.GOODS_SPECIFICATION, goodInfo.getString(BasicKey.GOODS_SPECIFICATION));
+        originalGoodsLine.put(BasicKey.GOODS_UNIT, goodInfo.getString(BasicKey.GOODS_UNIT));
+        originalGoodsLine.put(BasicKey.GOODS_PRICE, goodInfo.getString(BasicKey.GOODS_PRICE));
+        originalGoodsLine.put(BasicKey.GOODS_QUANTITY, invoiceDocDetail.getGoodsQuantity());
     }
 
     private SingleResponse<PushInvoiceDocResponse> pushInvoiceDoc(JSONObject pushInvoiceDocJsonRequest, PushInvoiceDocResponse pushInvoiceDocResponse) {
