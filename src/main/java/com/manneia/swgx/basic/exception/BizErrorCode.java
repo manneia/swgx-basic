@@ -10,6 +10,8 @@ import com.manneia.swgx.basic.common.ErrorCode;
  */
 public enum BizErrorCode implements ErrorCode {
 
+    DISCOUNT_GOODS_LIST_HANDLER_ERROR("discount_goods_list_handler_error", "折扣行商品处理失败"),
+
     /**
      * HTTP 客户端错误
      */

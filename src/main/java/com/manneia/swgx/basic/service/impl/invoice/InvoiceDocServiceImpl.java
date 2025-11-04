@@ -7,6 +7,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.manneia.swgx.basic.common.constant.BasicKey;
 import com.manneia.swgx.basic.common.response.SingleResponse;
 import com.manneia.swgx.basic.config.CustomizeUrlConfig;
+import com.manneia.swgx.basic.exception.BizErrorCode;
+import com.manneia.swgx.basic.exception.BizException;
 import com.manneia.swgx.basic.model.request.PushInvoiceDocDetail;
 import com.manneia.swgx.basic.model.request.PushInvoiceDocRequest;
 import com.manneia.swgx.basic.model.response.PushInvoiceDocResponse;
@@ -168,16 +170,20 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
             BigDecimal discountRate = discountPrice.divide(discountGoodsTotalPrice, 7, RoundingMode.HALF_UP);
             // 根据折扣率处理待折扣商品，生成折扣行，折扣行金额为负数，fphxz为1，折扣额为含税金额*折扣率，，被折扣行金额为整数，fphxz为2
             Map<String, PushInvoiceDocDetail> docDetailMap = invoiceDocDetails.stream().collect(Collectors.toMap(PushInvoiceDocDetail::getGoodsPersonalCode, invoiceDocDetail -> invoiceDocDetail));
-            for (int i = 0; i < discountGoodsList.size(); i++) {
-                JSONObject goodInfo = discountGoodsList.getJSONObject(i);
-                String goodsZxbm = goodInfo.getString(BasicKey.GOODS_PERSONAL_CODE);
-                PushInvoiceDocDetail pushInvoiceDocDetail = docDetailMap.get(goodsZxbm);
-                // 创建折扣行（fphxz=1，金额为负数）
-                JSONObject discountLine = getDiscountGoodsLine(discountPrice, pushInvoiceDocDetail, goodInfo, discountRate);
-                goodsList.add(discountLine);
-                // 创建被折扣行（fphxz=2，金额为正数）
-                JSONObject originalGoodsLine = getOriginalGoodsLine(discountedAmount, pushInvoiceDocDetail, goodInfo, pushInvoiceDocDetail.getGoodsTotalPriceTax(), discountRate);
-                goodsList.add(originalGoodsLine);
+            try {
+                for (int i = 0; i < discountGoodsList.size(); i++) {
+                    JSONObject goodInfo = discountGoodsList.getJSONObject(i);
+                    String goodsZxbm = goodInfo.getString(BasicKey.GOODS_PERSONAL_CODE);
+                    PushInvoiceDocDetail pushInvoiceDocDetail = docDetailMap.get(goodsZxbm);
+                    // 创建折扣行（fphxz=1，金额为负数）
+                    JSONObject discountLine = getDiscountGoodsLine(discountPrice, pushInvoiceDocDetail, goodInfo, discountRate);
+                    goodsList.add(discountLine);
+                    // 创建被折扣行（fphxz=2，金额为正数）
+                    JSONObject originalGoodsLine = getOriginalGoodsLine(discountedAmount, pushInvoiceDocDetail, goodInfo, pushInvoiceDocDetail.getGoodsTotalPriceTax(), discountRate);
+                    goodsList.add(originalGoodsLine);
+                }
+            } catch (Exception e) {
+                throw new BizException("折扣行处理失败", BizErrorCode.DISCOUNT_GOODS_LIST_HANDLER_ERROR);
             }
         }
         pushInvoiceDocJsonRequest.put(BasicKey.PRODUCT_PARAMS, goodsList);
