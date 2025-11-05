@@ -112,7 +112,6 @@
                 <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.manneia.swgx.basic.SwgxBasicApplication</mainClass>
-                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>
