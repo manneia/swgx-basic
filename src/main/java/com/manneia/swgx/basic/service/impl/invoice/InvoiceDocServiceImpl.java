@@ -2,6 +2,7 @@ package com.manneia.swgx.basic.service.impl.invoice;
 
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.json.JSONUtil;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.manneia.swgx.basic.common.constant.BasicKey;
@@ -13,7 +14,7 @@ import com.manneia.swgx.basic.model.request.PushInvoiceDocDetail;
 import com.manneia.swgx.basic.model.request.PushInvoiceDocRequest;
 import com.manneia.swgx.basic.model.response.PushInvoiceDocResponse;
 import com.manneia.swgx.basic.service.invoice.InvoiceDocService;
-import com.manneia.swgx.basic.utils.HttpUtil;
+import com.manneia.swgx.basic.utils.BwHttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
@@ -39,8 +40,9 @@ import static com.alibaba.fastjson.JSON.toJSONString;
 @RequiredArgsConstructor
 public class InvoiceDocServiceImpl implements InvoiceDocService {
 
-    private final HttpUtil httpUtil;
     private final CustomizeUrlConfig customizeUrlConfig;
+
+    private final BwHttpUtil httpUtil;
 
     private static final String GOODS_SIZE = "1";
 
@@ -57,8 +59,8 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
         String companyId;
         try {
             String request = Base64.getEncoder().encodeToString(JSONUtil.toJsonStr(getCompanyInfoRequest).getBytes(StandardCharsets.UTF_8));
-            JSONObject companyInfoResult = httpUtil.forPost(customizeUrlConfig.getQueryCompanyInfoUrl(), request, JSONObject.class);
-
+            String response = httpUtil.httpPostRequest(customizeUrlConfig.getQueryCompanyInfoUrl(), request, "json");
+            JSONObject companyInfoResult = JSON.parseObject(response);
             log.info("企业信息:{}", toJSONString(companyInfoResult));
             JSONObject data = companyInfoResult.getJSONObject(BasicKey.INTERFACE_DATA);
             companyId = data.getString(BasicKey.COMPANY_ID);
@@ -120,7 +122,8 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
             JSONObject productResult = null;
             try {
                 String queryProductRequestStr = Base64.getEncoder().encodeToString(JSONUtil.toJsonStr(queryProductRequest).getBytes(StandardCharsets.UTF_8));
-                productResult = httpUtil.forPost(customizeUrlConfig.getQueryGoodsInfoUrl(), queryProductRequestStr, JSONObject.class);
+                String response = httpUtil.httpPostRequest(customizeUrlConfig.getQueryGoodsInfoUrl(), queryProductRequestStr, "json");
+                productResult = JSON.parseObject(response);
                 log.info("查询商品信息:{}", toJSONString(productResult));
             } catch (Exception e) {
                 log.error("查询商品信息失败:{}", toJSONString(e));
@@ -195,12 +198,20 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
     private static JSONObject getDiscountGoodsLine(BigDecimal discountPrice, PushInvoiceDocDetail invoiceDocDetail, JSONObject goodInfo, BigDecimal discountRate) {
         JSONObject discountLine = new JSONObject();
         handlerDiscountInfo(invoiceDocDetail, goodInfo, discountLine);
-
+        String dj = goodInfo.getString("dj");
         // 金额为负数
-        discountLine.put(BasicKey.GOODS_TOTAL_PRICE_TAX, discountPrice);
+        BigDecimal lineDiscountPrice;
+        if (StringUtils.isNotBlank(dj)) {
+            lineDiscountPrice = new BigDecimal(dj)
+                    .multiply(discountRate)
+                    .setScale(2, RoundingMode.HALF_UP);
+            discountLine.put(BasicKey.GOODS_TOTAL_PRICE_TAX, lineDiscountPrice.negate());
+        } else {
+            throw new BizException("商品单价未维护", BizErrorCode.GOODS_PRICE_NOT_NULL);
+        }
 
         // 计算折扣税额，保持负数
-        BigDecimal discountTax = discountPrice
+        BigDecimal discountTax = lineDiscountPrice
                 .multiply(new BigDecimal(goodInfo.getString(BasicKey.VAT_RATE)))
                 .setScale(2, RoundingMode.HALF_UP);
         // 税额也为负数
@@ -242,7 +253,8 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
     private SingleResponse<PushInvoiceDocResponse> pushInvoiceDoc(JSONObject pushInvoiceDocJsonRequest, PushInvoiceDocResponse pushInvoiceDocResponse) {
         try {
             String pushInvoiceDocRequestStr = Base64.getEncoder().encodeToString(JSONUtil.toJsonStr(pushInvoiceDocJsonRequest).getBytes(StandardCharsets.UTF_8));
-            JSONObject pushDocResult = httpUtil.forPost(customizeUrlConfig.getPushInvoiceDocUrl(), pushInvoiceDocRequestStr, JSONObject.class);
+            String response = httpUtil.httpPostRequest(customizeUrlConfig.getPushInvoiceDocUrl(), pushInvoiceDocRequestStr, "json");
+            JSONObject pushDocResult = JSON.parseObject(response);
             log.info("推送开票申请并生成开票链接结果:{}", toJSONString(pushDocResult));
             if (pushDocResult != null) {
                 String code = pushDocResult.getString(BasicKey.RESPONSE_CODE);

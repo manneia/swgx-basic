@@ -12,6 +12,8 @@ public enum BizErrorCode implements ErrorCode {
 
     DISCOUNT_GOODS_LIST_HANDLER_ERROR("discount_goods_list_handler_error", "折扣行商品处理失败"),
 
+    GOODS_PRICE_NOT_NULL("GOODS_PRICE_NOT_NULL", "商品单价未维护"),
+
     /**
      * HTTP 客户端错误
      */
