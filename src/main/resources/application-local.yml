@@ -7,3 +7,8 @@ customize:
   query-company-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/queryUniqueSign
   query-goods-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/query/goods
   push-invoice-doc-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/addReceiptUrl
+
+swgx:
+  http:
+    ak_id: 91310000MA1HNBYL8J_xOgNgw4t9JD88Z705BXj
+    ak_secret: Z8aLLQj3ovNUid929ZSH1aNs
