@@ -1,7 +1,7 @@
 package com.manneia.swgx.basic.exception;
 
 
-import com.manneia.baiwangbasic.common.ErrorCode;
+import com.manneia.swgx.basic.common.ErrorCode;
 
 /**
  * @author luokaixuan
