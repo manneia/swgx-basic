@@ -6,11 +6,37 @@ spring:
   datasource:
     driver-class-name:
     druid:
-      url:
-      username:
-      password:
+      url: jdbc:mysql://192.168.1.216:3306/swgx_zsw?characterEncoding=utf8&useUnicode=true&useSSL=false&serverTimezone=GMT%2B8
+      username: root
+      password: czd321
       driver-class-name: com.mysql.cj.jdbc.Driver
 customize:
   query-company-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/queryUniqueSign
   query-goods-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/query/goods
   push-invoice-doc-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/addReceiptUrl
+invoice:
+  collection:
+    api:
+      url:  http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/listOcrInvByParams # 发票采集接口地址
+  push:
+    api:
+      url: "Url+/Invoice/Send" # 发票推送接口地址
+  single:
+    query:
+      api:
+        url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/dpxxcx # 单票信息查询接口地址
+  state:
+    change:
+      api:
+        url: "Url+/Invoice/ChaStatus" # 发票状态变更接口地址
+  sync:
+    api:
+      url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/fpzzhqpcx # 同步接口地址（原sync.api.url）
+  api:
+    app-id: KJmROaZegM
+    app-secret: 752A7B6360A178BEA74D105BA83A9097
+
+swgx:
+  http:
+    ak_id: 91310110MA1G8P6P8R_NF80z5Qeeq5om1W9amdo
+    ak_secret: 1iE8QKuxM4pBBsHgNlhUEvg1
