@@ -121,6 +121,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
             queryProductRequest.put(BasicKey.CURRENT, GOODS_CURRENT);
             JSONObject productResult = null;
             try {
+                log.info("查询商品信息:{}", toJSONString(queryProductRequest));
                 String queryProductRequestStr = Base64.getEncoder().encodeToString(JSONUtil.toJsonStr(queryProductRequest).getBytes(StandardCharsets.UTF_8));
                 String response = httpUtil.httpPostRequest(customizeUrlConfig.getQueryGoodsInfoUrl(), queryProductRequestStr, "json");
                 productResult = JSON.parseObject(response);
@@ -252,6 +253,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
 
     private SingleResponse<PushInvoiceDocResponse> pushInvoiceDoc(JSONObject pushInvoiceDocJsonRequest, PushInvoiceDocResponse pushInvoiceDocResponse) {
         try {
+            log.info("推送开票申请并生成开票链接请求:{}", toJSONString(pushInvoiceDocJsonRequest));
             String pushInvoiceDocRequestStr = Base64.getEncoder().encodeToString(JSONUtil.toJsonStr(pushInvoiceDocJsonRequest).getBytes(StandardCharsets.UTF_8));
             String response = httpUtil.httpPostRequest(customizeUrlConfig.getPushInvoiceDocUrl(), pushInvoiceDocRequestStr, "json");
             JSONObject pushDocResult = JSON.parseObject(response);

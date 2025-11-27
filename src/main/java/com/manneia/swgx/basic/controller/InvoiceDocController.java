@@ -4,13 +4,13 @@ import com.manneia.swgx.basic.common.response.SingleResponse;
 import com.manneia.swgx.basic.model.request.PushInvoiceDocRequest;
 import com.manneia.swgx.basic.model.response.PushInvoiceDocResponse;
 import com.manneia.swgx.basic.service.invoice.InvoiceDocService;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
-import javax.validation.Valid;
 
 /**
  * @author lkx
@@ -25,7 +25,7 @@ public class InvoiceDocController {
     private InvoiceDocService invoiceDocService;
 
     @PostMapping(value = "push")
-    public SingleResponse<PushInvoiceDocResponse> pushInvoiceDoc(@RequestBody @Valid PushInvoiceDocRequest pushInvoiceDocRequest) {
+    public SingleResponse<PushInvoiceDocResponse> pushInvoiceDoc(@RequestBody @Validated PushInvoiceDocRequest pushInvoiceDocRequest) {
         return invoiceDocService.pushInvoiceDoc(pushInvoiceDocRequest);
     }
 }

@@ -2,6 +2,7 @@ package com.manneia.swgx.basic.model.request;
 
 import lombok.Data;
 
+import javax.validation.Valid;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -102,5 +103,6 @@ public class PushInvoiceDocRequest {
      */
     @NotNull(message = "订单明细不能为空")
     @NotEmpty(message = "订单明细不能为空")
+    @Valid
     private List<PushInvoiceDocDetail> invoiceDocDetails;
 }
