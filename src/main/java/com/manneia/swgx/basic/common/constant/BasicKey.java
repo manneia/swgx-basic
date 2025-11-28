@@ -8,6 +8,7 @@ package com.manneia.swgx.basic.common.constant;
 @SuppressWarnings("unused")
 public class BasicKey {
 
+
     private BasicKey() {
     }
 
@@ -49,41 +50,44 @@ public class BasicKey {
 
     public static final String GOODS_QUANTITY = "sl";
 
-     public static final String GOODS_TOTAL_PRICE_TAX = "je";
+    public static final String GOODS_TOTAL_PRICE_TAX = "je";
 
-     public static final String GOODS_TOTAL_TAX = "se";
+    public static final String GOODS_TOTAL_TAX = "se";
 
-     public static final String GOODS_NAME = "spmc";
+    public static final String GOODS_NAME = "spmc";
 
-     public static final String GOODS_CODE = "spbm";
+    public static final String GOODS_CODE = "spbm";
 
-     public static final String GOODS_SPECIFICATION = "ggxh";
+    public static final String GOODS_SPECIFICATION = "ggxh";
 
-     public static final String GOODS_UNIT = "dw";
+    public static final String GOODS_UNIT = "dw";
 
-     public static final String GOODS_PRICE = "dj";
+    public static final String GOODS_PRICE = "dj";
 
-     public static final String GOODS_TAX_RATE = "slv";
+    public static final String GOODS_TAX_RATE = "slv";
 
-     public static final String SIZE = "size";
+    public static final String SIZE = "size";
 
-     public static final String CURRENT = "current";
+    public static final String CURRENT = "current";
 
-     public static final String TAXPAYER_NAME = "nsrmc";
-     
-     public static final String TAXPAYER_REG_NO = "nsrsbh";
-     
-     public static final String SELLER_TAX_REG_NO = "xsfNsrsbh";
-     
-     public static final String ERROR_MESSAGE = "renson";
-     
-     public static final String RESPONSE_CODE = "code";
-     
-     public static final String INVOICE_ITEM_TYPE = "fphxz";
-     
-     public static final String RECORDS = "records";
-     
-     public static final String VAT_RATE = "zzssl";
-     
-     public static final String PRODUCT_PARAMS = "prodParam";
+    public static final String TAXPAYER_NAME = "nsrmc";
+
+    public static final String TAXPAYER_REG_NO = "nsrsbh";
+
+    public static final String SELLER_TAX_REG_NO = "xsfNsrsbh";
+
+    public static final String ERROR_MESSAGE = "renson";
+
+    public static final String RESPONSE_CODE = "code";
+
+    public static final String INVOICE_ITEM_TYPE = "fphxz";
+
+    public static final String RECORDS = "records";
+
+    public static final String VAT_RATE = "zzssl";
+
+    public static final String PRODUCT_PARAMS = "prodParam";
+
+    public static final String BIZ_DOC_TYPE = "ywdjDm";
+
 }

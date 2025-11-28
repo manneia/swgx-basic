@@ -107,6 +107,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
         pushInvoiceDocJsonRequest.put(BasicKey.INVOICE_TOTAL_TAX, invoiceTotalTax);
         pushInvoiceDocJsonRequest.put(BasicKey.LOGIN_ACCOUNT, loginAccount);
         pushInvoiceDocJsonRequest.put(BasicKey.REMARKS, remarks);
+        pushInvoiceDocJsonRequest.put(BasicKey.BIZ_DOC_TYPE, "invoice_issue");
         JSONArray goodsList = new JSONArray();
         // 原价商品列表
         AtomicReference<BigDecimal> originalGoodsTotalPrice = new AtomicReference<>(BigDecimal.ZERO);

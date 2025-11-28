@@ -99,6 +99,11 @@ public class PushInvoiceDocRequest {
     private String loginAccount;
 
     /**
+     * 业务单据代码
+     */
+    private String bizDocType;
+
+    /**
      * 订单明细
      */
     @NotNull(message = "订单明细不能为空")
