@@ -52,7 +52,9 @@ public enum BizErrorCode implements ErrorCode {
     /**
      * 远程调用返回结果失败
      */
-    REMOTE_CALL_RESPONSE_IS_FAILED("REMOTE_CALL_RESPONSE_IS_FAILED", "远程调用返回结果失败");
+    REMOTE_CALL_RESPONSE_IS_FAILED("REMOTE_CALL_RESPONSE_IS_FAILED", "远程调用返回结果失败"),
+
+    GOODS_DISCOUNT_TYPE_ERROR("GOODS_DISCOUNT_TYPE_ERROR", "商品折扣类型错误");
 
     private final String code;
 
