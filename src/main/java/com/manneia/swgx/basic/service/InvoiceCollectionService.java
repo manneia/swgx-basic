@@ -4,14 +4,22 @@ import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.manneia.swgx.basic.common.constant.TaxpayerRegistry;
 import com.manneia.swgx.basic.common.request.InvoiceCollectionQueryRequest;
+import com.manneia.swgx.basic.common.request.InvoiceFullQueryRequest;
+import com.manneia.swgx.basic.common.request.InvoiceHistoryQueryRequest;
 import com.manneia.swgx.basic.common.request.InvoiceSingleQueryRequest;
 import com.manneia.swgx.basic.common.request.InvoiceStateChangeRequest;
 import com.manneia.swgx.basic.common.response.InvoiceCollectionResponse;
+import com.manneia.swgx.basic.common.response.InvoiceFullItemDTO;
+import com.manneia.swgx.basic.common.response.InvoiceFullQueryResponse;
+import com.manneia.swgx.basic.common.response.InvoiceHistoryItemDTO;
+import com.manneia.swgx.basic.common.response.InvoiceHistoryQueryResponse;
 import com.manneia.swgx.basic.common.response.InvoiceSingleQueryResponse;
 import com.manneia.swgx.basic.common.response.InvoiceStateChangeResponse;
 import com.manneia.swgx.basic.mapper.InvoiceCollectionRecordMapper;
+import com.manneia.swgx.basic.mapper.InvoiceHistoryMapper;
 import com.manneia.swgx.basic.mapper.InvoiceStatusChangeLogMapper;
 import com.manneia.swgx.basic.model.entity.InvoiceCollectionRecord;
+import com.manneia.swgx.basic.model.entity.InvoiceHistory;
 import com.manneia.swgx.basic.model.entity.InvoiceStatusChangeLog;
 import com.manneia.swgx.basic.service.support.InvoiceApiSupport;
 import com.manneia.swgx.basic.utils.BwHttpUtil;
@@ -28,8 +36,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 发票采集服务
@@ -57,6 +65,12 @@ public class InvoiceCollectionService {
     @Value("${invoice.state.change.api.url:}")
     private String stateChangeApiUrl;
 
+    @Value("${invoice.history.query.api.url:}")
+    private String historyQueryApiUrl;
+
+    @Value("${invoice.full.query.api.url:}")
+    private String fullQueryApiUrl;
+
     @Resource
     private RestTemplate restTemplate;
 
@@ -71,6 +85,14 @@ public class InvoiceCollectionService {
 
     @Resource
     private InvoiceApiSupport invoiceApiSupport;
+
+    @Resource
+    private InvoiceHistoryMapper invoiceHistoryMapper;
+
+    private static final DateTimeFormatter YYYYMM = DateTimeFormatter.ofPattern("yyyyMM");
+
+    // 缓存近两个月的往期勾选发票信息：纳税人识别号_月份 -> 发票列表
+    private final Map<String, List<InvoiceHistoryItemDTO>> recentHistoryCache = new HashMap<>();
 
     /**
      * 按照指定日期采集所有纳税人的发票
@@ -144,8 +166,8 @@ public class InvoiceCollectionService {
         InvoiceCollectionQueryRequest request = new InvoiceCollectionQueryRequest();
         request.setCzlsh(UUID.randomUUID().toString().replace("-", ""));
         request.setGssh(taxNo);
-        request.setKprqq(startDate); // 开票日期起：昨天
-        request.setKprqz(endDate);  // 开票日期止：今天
+        request.setCjrqq(startDate); // 采集日期起：昨天
+        request.setCjrqz(endDate);  // 采集日期止：今天
         request.setPageNumber(pageNumber);
         request.setPageSize(pageSize);
         return request;
@@ -168,11 +190,14 @@ public class InvoiceCollectionService {
     private void syncInvoicesByEntryStatus(boolean accounted) {
         LocalDateTime halfYearAgo = LocalDate.now().minusMonths(6).atStartOfDay();
         LambdaQueryWrapper<InvoiceCollectionRecord> wrapper = new LambdaQueryWrapper<InvoiceCollectionRecord>()
-                .ge(InvoiceCollectionRecord::getInvoiceDate, halfYearAgo);
+                .ge(InvoiceCollectionRecord::getInvoiceDate, halfYearAgo)
+                ;
         if (accounted) {
-            wrapper.eq(InvoiceCollectionRecord::getEntryStatus, "1");
+            // 已入账：02-已入账（企业所得税提前扣除）、03-已入账（企业所得税不扣除）
+            wrapper.in(InvoiceCollectionRecord::getEntryStatus, "02", "03");
         } else {
-            wrapper.and(w -> w.ne(InvoiceCollectionRecord::getEntryStatus, "1")
+            // 未入账：01-未入账、06-入账撤销、或为null
+            wrapper.and(w -> w.in(InvoiceCollectionRecord::getEntryStatus, "01", "06")
                     .or().isNull(InvoiceCollectionRecord::getEntryStatus));
         }
 
@@ -193,24 +218,46 @@ public class InvoiceCollectionService {
     }
 
     private void syncSingleInvoiceStatus(InvoiceCollectionRecord record) {
-        InvoiceSingleQueryResponse.InvoiceSingleData data = querySingleInvoice(record);
-        if (data == null) {
+        // 使用全量进项发票查询接口获取最新的发票状态、勾选状态和入账状态
+        InvoiceFullItemDTO fullInvoice = queryFullInvoiceByRecord(record);
+        if (fullInvoice == null) {
+            log.warn("全量发票查询失败，跳过同步：{} {}", record.getInvoiceCode(), record.getInvoiceNumber());
             return;
         }
 
-        String newInvoiceStatus = data.getFpzt();
-        String newCheckStatus = data.getSfgx();
+        String newInvoiceStatus = fullInvoice.getFpzt();
+        String newCheckStatus = fullInvoice.getGxzt();
+        String newEntryStatus = fullInvoice.getRzyt();
+
         if (equals(record.getInvoiceStatus(), newInvoiceStatus)
-                && equals(record.getCheckStatus(), newCheckStatus)) {
+                && equals(record.getCheckStatus(), newCheckStatus)
+                && equals(record.getEntryStatus(), newEntryStatus)) {
             log.debug("发票状态未变化：{} {}", record.getInvoiceCode(), record.getInvoiceNumber());
             return;
         }
 
         String oldInvoiceStatus = record.getInvoiceStatus();
         String oldCheckStatus = record.getCheckStatus();
+        String oldEntryStatus = record.getEntryStatus();
 
-        updateRecordWithSingleData(record, data);
-        callStateChangeAndLog(record, data, oldInvoiceStatus, oldCheckStatus);
+
+        // 只要有任意一个状态发生变化，就调用一次状态变更接口
+        if ((!equals(oldInvoiceStatus, newInvoiceStatus) && newInvoiceStatus != null)
+                || (!equals(oldCheckStatus, newCheckStatus) && newCheckStatus != null)
+                || (!equals(oldEntryStatus, newEntryStatus) && newEntryStatus != null)) {
+            try {
+                boolean success = callStateChangeApi(record,
+                        oldInvoiceStatus, oldCheckStatus, oldEntryStatus,
+                        newInvoiceStatus, newCheckStatus, newEntryStatus,
+                        fullInvoice.getGxsj());
+                // 只有当状态变更接口调用成功时，才使用全量数据更新采集记录
+                if (success) {
+                    updateRecordWithFullData(record, fullInvoice);
+                }
+            } catch (Exception e) {
+                log.error("调用状态变更接口失败：{} {}", record.getInvoiceCode(), record.getInvoiceNumber(), e);
+            }
+        }
     }
 
     private InvoiceSingleQueryResponse.InvoiceSingleData querySingleInvoice(InvoiceCollectionRecord record) {
@@ -299,6 +346,7 @@ public class InvoiceCollectionService {
         request.setState(data.getFpzt());
         request.setDeductible(data.getSfgx());
         request.setDeductibleDate(data.getQrsj());
+        request.setPostState(data.getGxsj());
 
         InvoiceApiSupport.HeaderPackage headerPackage = invoiceApiSupport.buildHeaders();
         HttpEntity<InvoiceStateChangeRequest> entity = new HttpEntity<>(request, headerPackage.getHeaders());
@@ -313,10 +361,16 @@ public class InvoiceCollectionService {
         InvoiceStatusChangeLog logEntity = new InvoiceStatusChangeLog();
         logEntity.setInvoiceCode(record.getInvoiceCode());
         logEntity.setInvoiceNumber(record.getInvoiceNumber());
-        logEntity.setPreviousInvoiceStatus(oldInvoiceStatus);
-        logEntity.setPreviousCheckStatus(oldCheckStatus);
-        logEntity.setCurrentInvoiceStatus(record.getInvoiceStatus());
-        logEntity.setCurrentCheckStatus(record.getCheckStatus());
+        if ("发票状态".equals("发票状态")) {
+            logEntity.setPreviousInvoiceStatus(oldInvoiceStatus);
+            logEntity.setCurrentInvoiceStatus(record.getInvoiceStatus());
+        } else if ("勾选状态".equals("勾选状态")) {
+            logEntity.setPreviousCheckStatus(oldCheckStatus);
+            logEntity.setCurrentCheckStatus(record.getCheckStatus());
+        } else if ("入账状态".equals("入账状态")) {
+            logEntity.setPreviousEntryStatus(record.getEntryStatus());
+            logEntity.setCurrentEntryStatus(record.getEntryStatus());
+        }
         logEntity.setRequestId(headerPackage.getRequestId());
         logEntity.setRequestBody(JSON.toJSONString(request));
         if (response != null) {
@@ -329,13 +383,12 @@ public class InvoiceCollectionService {
     }
 
     private void saveIfAbsent(InvoiceCollectionResponse.InvoiceCollectionItem item) {
-        if (item.getFpdm() == null || item.getFphm() == null) {
+        if (item.getFpdm() == null && item.getFphm() == null) {
             log.warn("发票数据缺少发票代码或号码，跳过：{}", item);
             return;
         }
 
         LambdaQueryWrapper<InvoiceCollectionRecord> wrapper = new LambdaQueryWrapper<InvoiceCollectionRecord>()
-                .eq(InvoiceCollectionRecord::getInvoiceCode, item.getFpdm())
                 .eq(InvoiceCollectionRecord::getInvoiceNumber, item.getFphm())
                 .last("LIMIT 1");
 
@@ -343,6 +396,8 @@ public class InvoiceCollectionService {
             log.debug("发票已存在，跳过插入：{} {}", item.getFpdm(), item.getFphm());
             return;
         }
+
+        log.info("开始插入新发票记录，发票代码={}，发票号码={}", item.getFpdm(), item.getFphm());
 
         InvoiceCollectionRecord record = new InvoiceCollectionRecord();
         record.setInvoiceType(item.getFplxdm());
@@ -362,6 +417,142 @@ public class InvoiceCollectionService {
         record.setUpdateTime(LocalDateTime.now());
 
         recordMapper.insert(record);
+        
+        log.info("发票记录插入成功，发票代码={}，发票号码={}，ID={},发票状态={}，勾选状态={}，入账状态={}", item.getFpdm(), item.getFphm(), record.getId(), record.getInvoiceStatus(), record.getCheckStatus(), record.getEntryStatus());
+    }
+
+    /**
+     * 保存发票状态 / 勾选状态 / 入账状态变更日志
+     * （仅在调用状态变更接口之后由 callStateChangeApi 调用）
+     */
+    private void saveStatusChangeLog(InvoiceCollectionRecord record,
+                                     String oldInvoiceStatus,
+                                     String oldCheckStatus,
+                                     String oldEntryStatus,
+                                     String newInvoiceStatus,
+                                     String newCheckStatus,
+                                     String newEntryStatus,
+                                     String requestId,
+                                     InvoiceStateChangeRequest request,
+                                     InvoiceStateChangeResponse response) {
+        InvoiceStatusChangeLog logEntity = new InvoiceStatusChangeLog();
+        logEntity.setInvoiceCode(record.getInvoiceCode());
+        logEntity.setInvoiceNumber(record.getInvoiceNumber());
+        logEntity.setZpfphm(record.getZpfphm());
+
+        logEntity.setPreviousInvoiceStatus(oldInvoiceStatus);
+        logEntity.setCurrentInvoiceStatus(newInvoiceStatus);
+        logEntity.setPreviousCheckStatus(oldCheckStatus);
+        logEntity.setCurrentCheckStatus(newCheckStatus);
+        logEntity.setPreviousEntryStatus(oldEntryStatus);
+        logEntity.setCurrentEntryStatus(newEntryStatus);
+
+        logEntity.setRequestId(requestId);
+        logEntity.setRequestBody(JSON.toJSONString(request));
+        if (response != null) {
+            logEntity.setResponseStatus(response.getStatus());
+            logEntity.setResponseMsg(response.getMsg());
+            logEntity.setResponseOutJson(response.getOutJson());
+        }
+
+        logEntity.setCreatedAt(LocalDateTime.now());
+        statusChangeLogMapper.insert(logEntity);
+    }
+
+    /**
+     * 根据采集记录调用全量进项发票查询接口
+     */
+    private InvoiceFullItemDTO queryFullInvoiceByRecord(InvoiceCollectionRecord record) {
+        log.info("=== 开始全量进项发票查询（采集记录） ===");
+        log.info("发票代码: {}, 发票号码: {}", record.getInvoiceCode(), record.getInvoiceNumber());
+
+        if (fullQueryApiUrl == null || fullQueryApiUrl.isEmpty()) {
+            log.warn("invoice.full.query.api.url 未配置，跳过全量发票查询");
+            return null;
+        }
+
+        if (record.getInvoiceCode() == null || record.getInvoiceNumber() == null) {
+            log.warn("发票缺少代码或号码，跳过全量发票查询");
+            return null;
+        }
+
+        String nsrsbh = record.getBuyerTaxNo();
+        if (nsrsbh == null || nsrsbh.isEmpty()) {
+            log.warn("发票缺少购买方纳税人识别号，跳过全量发票查询：{} {}",
+                    record.getInvoiceCode(), record.getInvoiceNumber());
+            return null;
+        }
+
+        try {
+            InvoiceFullQueryRequest request = new InvoiceFullQueryRequest();
+            request.setCzlsh(UUID.randomUUID().toString().replace("-", ""));
+            request.setNsrsbh(nsrsbh);
+            request.setFpdm(record.getInvoiceCode());
+            request.setFphm(record.getInvoiceNumber());
+            request.setPageNumber("1");
+            request.setPageSize("1");
+
+            log.info("调用全量进项发票查询接口，url={}，请求参数={}", fullQueryApiUrl, JSON.toJSONString(request));
+
+            String responseStr = bwHttpUtil.httpPostRequest(fullQueryApiUrl, JSON.toJSONString(request), "json");
+
+            log.info("全量进项发票查询接口返回，url={}，发票代码={}，发票号码={}，响应={}",
+                    fullQueryApiUrl, record.getInvoiceCode(), record.getInvoiceNumber(), responseStr);
+
+            if (responseStr == null || responseStr.isEmpty()) {
+                log.warn("全量发票查询失败：{} {}，响应为空",
+                        record.getInvoiceCode(), record.getInvoiceNumber());
+                return null;
+            }
+
+            InvoiceFullQueryResponse response = JSON.parseObject(responseStr, InvoiceFullQueryResponse.class);
+
+            if (response == null || response.getCode() == null || response.getCode() != 0) {
+                log.warn("全量发票查询失败：{} {}，响应码: {}, 消息: {}",
+                        record.getInvoiceCode(), record.getInvoiceNumber(),
+                        response != null ? response.getCode() : "null",
+                        response != null ? response.getMsg() : "null");
+                return null;
+            }
+
+            if (response.getData() == null || response.getData().isEmpty()) {
+                log.warn("全量发票查询返回空数据：{} {}",
+                        record.getInvoiceCode(), record.getInvoiceNumber());
+                return null;
+            }
+
+            InvoiceFullItemDTO invoice = response.getData().get(0);
+            log.info("=== 全量发票查询成功 ===");
+            log.info("发票ID: {}, 发票状态: {}, 勾选状态: {}, 勾选时间: {},入账状态: {}",
+                    invoice.getFpid(), invoice.getFpzt(), invoice.getGxzt(), invoice.getGxsj(), invoice.getRzyt());
+            return invoice;
+
+        } catch (Exception e) {
+            log.error("=== 全量发票查询异常 ===");
+            log.error("全量发票查询异常：{} {}", record.getInvoiceCode(), record.getInvoiceNumber(), e);
+            return null;
+        }
+    }
+
+    /**
+     * 使用全量发票数据更新采集记录
+     */
+    private void updateRecordWithFullData(InvoiceCollectionRecord record, InvoiceFullItemDTO fullInvoice) {
+        record.setInvoiceStatus(fullInvoice.getFpzt());
+        record.setCheckStatus(fullInvoice.getGxzt());
+        record.setEntryStatus(fullInvoice.getRzyt());
+
+        record.setSellerName(fullInvoice.getXfmc());
+        record.setSellerTaxNo(fullInvoice.getXfsh());
+        record.setInvoiceDate(parseDateTime(fullInvoice.getKprq()));
+
+        BigDecimal totalAmountTax = fullInvoice.getJshj();
+        if (totalAmountTax != null) {
+            record.setTotalAmountTax(totalAmountTax);
+        }
+
+        record.setUpdateTime(LocalDateTime.now());
+        recordMapper.updateById(record);
     }
 
     private BigDecimal calculateTotalAmountTax(InvoiceSingleQueryResponse.InvoiceSingleData data) {
@@ -376,6 +567,83 @@ public class InvoiceCollectionService {
         amount = amount == null ? BigDecimal.ZERO : amount;
         tax = tax == null ? BigDecimal.ZERO : tax;
         return amount.add(tax);
+    }
+
+    /**用发票状态变更接口（根据当前采集记录），并在调用后写入状态变更日志。
+     * 调
+     * 返回 true 表示接口调用成功（响应不为空且 status == 0），否则为 false。
+     */
+    private boolean callStateChangeApi(InvoiceCollectionRecord record,
+                                       String oldInvoiceStatus,
+                                       String oldCheckStatus,
+                                       String oldEntryStatus,
+                                       String newInvoiceStatus,
+                                       String newCheckStatus,
+                                       String newEntryStatus,
+                                       String newCheckTime) {
+        if (stateChangeApiUrl == null || stateChangeApiUrl.isEmpty()) {
+            log.warn("invoice.state.change.api.url 未配置，跳过状态变更推送");
+            return false;
+        }
+
+        InvoiceStateChangeRequest request = new InvoiceStateChangeRequest();
+        request.setInvoiceType(record.getInvoiceType());
+        request.setInvoiceCode(record.getInvoiceCode());
+        if(record.getZpfphm()!=null){
+            request.setInvoiceNum(record.getZpfphm());
+        }else {
+            request.setInvoiceNum(record.getInvoiceNumber());
+        }
+
+        if (record.getInvoiceDate() != null) {
+            request.setInvoiceDate(record.getInvoiceDate().format(DATE_FORMATTER));
+        }
+
+        request.setPurchaseTaxPayer(record.getBuyerName());
+        request.setPurchaseTaxPayerNo(record.getBuyerTaxNo());
+        request.setSalesTaxPayer(record.getSellerName());
+        request.setSalesTaxPayerNo(record.getSellerTaxNo());
+        request.setTotalAmountTax(record.getTotalAmountTax());
+        // 使用最新的发票状态 / 勾选状态 / 入账状态
+        request.setState(newInvoiceStatus);
+        request.setDeductible(newCheckStatus);
+        if("1".equals(newCheckStatus)){
+            request.setDeductibleDate(newCheckTime);
+        } else if ("-1".equals(newCheckStatus)) {
+            request.setDeductible("3");
+        }
+        request.setPostState(newEntryStatus);
+
+        InvoiceApiSupport.HeaderPackage headerPackage = invoiceApiSupport.buildHeaders();
+        HttpEntity<InvoiceStateChangeRequest> entity = new HttpEntity<>(request, headerPackage.getHeaders());
+
+        log.info("调用发票状态变更接口(采集记录)，url={}，请求参数={}", stateChangeApiUrl, JSON.toJSONString(request));
+
+        InvoiceStateChangeResponse response = restTemplate.postForObject(
+                stateChangeApiUrl, entity, InvoiceStateChangeResponse.class);
+
+        log.info("发票状态变更接口返回(采集记录)，url={}，发票代码={}，发票号码={}，响应={}",
+                stateChangeApiUrl, record.getInvoiceCode(), record.getInvoiceNumber(), JSON.toJSONString(response));
+
+        // 在接口调用完成后，记录一次综合的状态变更日志（无论成功失败都记录一条）
+        saveStatusChangeLog(record,
+                oldInvoiceStatus, oldCheckStatus, oldEntryStatus,
+                newInvoiceStatus, newCheckStatus, newEntryStatus,
+                headerPackage.getRequestId(), request, response);
+
+        // 解析响应结果，只有当 status == 0 时认为调用成功
+        if (response == null) {
+            log.warn("发票状态变更接口返回为空，视为调用失败");
+            return false;
+        }
+        Integer status = response.getStatus();
+        if (status == null || status != 0) {
+            log.warn("发票状态变更接口调用失败，status={}，msg={}",
+                    response.getStatus(), response.getMsg());
+            return false;
+        }
+
+        return true;
     }
 
     private boolean equals(String a, String b) {

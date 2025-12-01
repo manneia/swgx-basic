@@ -16,24 +16,14 @@ public class InvoicePushResponse implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * 是否成功
-     */
-    private Boolean success;
 
-    /**
-     * 响应代码
-     */
-    private String code;
+    private String status;
 
-    /**
-     * 响应消息
-     */
+
+    private String outJson;
+
+
     private String msg;
 
-    /**
-     * 错误信息（如果有）
-     */
-    private String errorMsg;
 }
 

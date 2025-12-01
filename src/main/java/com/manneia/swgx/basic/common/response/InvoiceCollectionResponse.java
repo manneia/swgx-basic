@@ -115,6 +115,13 @@ public class InvoiceCollectionResponse implements Serializable {
         private String gxpc;
         private String gxczr;
         private String gxczrq;
+        /**
+         * 入账状态代码
+         * 01-未入账
+         * 02-已入账（企业所得税提前扣除）
+         * 03-已入账（企业所得税不扣除）
+         * 06-入账撤销
+         */
         private String rzztDm;
         private String rzpc;
         private String rzczr;

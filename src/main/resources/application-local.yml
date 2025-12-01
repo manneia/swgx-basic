@@ -20,15 +20,23 @@ invoice:
       url:  http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/listOcrInvByParams # 发票采集接口地址
   push:
     api:
-      url: "Url+/Invoice/Send" # 发票推送接口地址
+      url: https://sys.keji-info.com:8443/baiwang/call/Invoice/Send # 发票推送接口地址
   single:
     query:
       api:
         url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/dpxxcx # 单票信息查询接口地址
+  history:
+    query:
+      api:
+        url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/wqgxfpxxcx # 往期勾选发票信息查询接口地址
+  full:
+    query:
+      api:
+        url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/jxqlfpcx # 全量进项发票查询接口地址
   state:
     change:
       api:
-        url: "Url+/Invoice/ChaStatus" # 发票状态变更接口地址
+        url: https://sys.keji-info.com:8443/baiwang/call/Invoice/ChaStatus
   sync:
     api:
       url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/fpzzhqpcx # 同步接口地址（原sync.api.url）

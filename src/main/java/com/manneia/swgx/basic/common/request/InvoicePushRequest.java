@@ -147,14 +147,8 @@ public class InvoicePushRequest extends BaseRequest {
      */
     private String machineTaxNo;
 
-    /**
-     * 是否可抵扣
-     */
     private String deductible;
 
-    /**
-     * 抵扣日期
-     */
     private String deductibleDate;
 
     /**

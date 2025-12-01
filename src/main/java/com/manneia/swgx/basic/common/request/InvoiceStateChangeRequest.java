@@ -84,14 +84,19 @@ public class InvoiceStateChangeRequest extends BaseRequest {
     private String state;
 
     /**
-     * 是否可抵扣
+     * 勾选状态
      */
     private String deductible;
 
     /**
-     * 抵扣日期（yyyy-MM-dd）
+     * 勾选时间（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss）
      */
     private String deductibleDate;
+
+    /**
+     * 入账状态
+     */
+    private String PostState;
 }
 
 

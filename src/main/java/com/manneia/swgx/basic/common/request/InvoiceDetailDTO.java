@@ -65,6 +65,6 @@ public class InvoiceDetailDTO implements Serializable {
     /**
      * 税率
      */
-    private BigDecimal rate;
+    private String rate;
 }
 

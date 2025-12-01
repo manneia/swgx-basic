@@ -13,7 +13,9 @@ import java.util.List;
  *   "success": true,
  *   "code": 0,
  *   "msg": "",
- *   "data": [ InvoiceDTO... ]
+ *   "data": {
+ *     "fpxxList": [ InvoiceDTO... ]
+ *   }
  * }
  *
  * @author lk
@@ -30,7 +32,14 @@ public class SyncResponse implements Serializable {
 
 	private String msg;
 
-	private List<InvoiceDTO> data;
+	private InvoiceDataWrapper data;
+	
+	/**
+	 * 获取发票列表的便捷方法
+	 */
+	public List<InvoiceDTO> getFpxxList() {
+		return data != null ? data.getFpxxList() : null;
+	}
 }
 
 

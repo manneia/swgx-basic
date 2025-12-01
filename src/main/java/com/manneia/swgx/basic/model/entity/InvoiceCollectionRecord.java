@@ -41,6 +41,8 @@ public class InvoiceCollectionRecord implements Serializable {
      */
     private String invoiceNumber;
 
+    private String zpfphm;
+
     /**
      * 开票日期
      */
@@ -82,7 +84,11 @@ public class InvoiceCollectionRecord implements Serializable {
     private String checkStatus;
 
     /**
-     * 入账状态（0-未入账，1-已入账）
+     * 入账状态
+     * 01-未入账
+     * 02-已入账（企业所得税提前扣除）
+     * 03-已入账（企业所得税不扣除）
+     * 06-入账撤销
      */
     private String entryStatus;
 

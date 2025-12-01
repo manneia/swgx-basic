@@ -19,15 +19,26 @@ public class InvoiceItemDTO implements Serializable {
 	private static final long serialVersionUID = 1L;
 
 	private String xh;
+	
+	/**
+	 * 明细ID
+	 */
+	private String mxid;
+	
 	private String spmc;
 	private String spbm;
 	private String ggxh;
 	private String dw;
-	private String dj;
 	private String spsl;
+	private String dj;
 	private String je;
 	private String sl;
 	private String se;
+	
+	/**
+	 * 特定业务类型（如：铁路电子客票）
+	 */
+	private String tdywlx;
 }
 
 

@@ -28,6 +28,8 @@ public class InvoiceStatusChangeLog implements Serializable {
 
     private String invoiceNumber;
 
+    private String zpfphm;
+
     private String previousInvoiceStatus;
 
     private String previousCheckStatus;
@@ -35,6 +37,10 @@ public class InvoiceStatusChangeLog implements Serializable {
     private String currentInvoiceStatus;
 
     private String currentCheckStatus;
+
+    private String previousEntryStatus;
+
+    private String currentEntryStatus;
 
     private String requestId;
 
