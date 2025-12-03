@@ -206,28 +206,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                 }
                 break;
             case "1":
-                for (int i = 0; i < goodsDetails.size(); i++) {
-                    JSONObject goodsDetail = goodsDetails.getJSONObject(i);
-                    BigDecimal goodsPrice = goodsDetail.getBigDecimal(BasicKey.GOODS_PRICE);
-                    BigDecimal goodsPriceExcludeTax = goodsPrice.divide(BigDecimal.ONE.add(goodsDetail.getBigDecimal(BasicKey.VAT_RATE)), 2, RoundingMode.HALF_UP);
-                    BigDecimal goodsTotalAmountTax = goodsPrice.multiply(invoiceDocDetail.getGoodsQuantity());
-                    JSONObject discountGoods = new JSONObject();
-                    handlerDiscountInfo(invoiceDocDetail, goodsDetail, discountGoods);
-                    discountGoods.put(BasicKey.GOODS_TOTAL_PRICE_TAX, goodsTotalAmountTax.negate());
-                    discountGoods.put(BasicKey.GOODS_TOTAL_TAX, goodsTotalAmountTax.subtract(goodsPriceExcludeTax).negate());
-                    discountGoods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
-                    discountGoods.put(BasicKey.INVOICE_ITEM_TYPE, "1");
-                    discountGoods.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
-                    goodsList.add(discountGoods);
-                    JSONObject normalGoods = new JSONObject();
-                    handlerDiscountInfo(invoiceDocDetail, goodsDetail, normalGoods);
-                    normalGoods.put(BasicKey.GOODS_TOTAL_PRICE_TAX, goodsTotalAmountTax);
-                    normalGoods.put(BasicKey.GOODS_TOTAL_TAX, goodsTotalAmountTax.subtract(goodsPriceExcludeTax));
-                    normalGoods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
-                    normalGoods.put(BasicKey.INVOICE_ITEM_TYPE, "2");
-                    normalGoods.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
-                    goodsList.add(normalGoods);
-                }
+                log.info("商品编码:{}, 折扣类型为满减,不处理", invoiceDocDetail.getGoodsPersonalCode());
                 break;
             case "2":
                 for (int i = 0; i < goodsDetails.size(); i++) {
