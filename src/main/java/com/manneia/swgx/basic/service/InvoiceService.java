@@ -88,9 +88,9 @@ public class InvoiceService {
      */
     private static final List<String> TARGET_FPLXDM = Collections.unmodifiableList(
             Arrays.asList("17", "85", "86","01","04"));
-    private static final List<String> TARGET_YT = Collections.unmodifiableList(
-            Arrays.asList("83971601","55197407","46272783","39233465","223320251001071749-L01","25372000000178854079")
-    );
+//    private static final List<String> TARGET_YT = Collections.unmodifiableList(
+//            Arrays.asList("83971601","55197407","46272783","39233465","223320251001071749-L01","25372000000178854079")
+//    );
 
     /**
      * 处理同步返回的发票数据
@@ -109,8 +109,8 @@ public class InvoiceService {
         List<InvoiceDTO> targetInvoices = invoiceList.stream()
                 .filter(invoice -> invoice.getFplxdm() != null
                         && TARGET_FPLXDM.contains(invoice.getFplxdm()))
-                .filter(invoice -> invoice.getFphm() != null
-                        && TARGET_YT.contains(invoice.getFphm()))
+//                .filter(invoice -> invoice.getFphm() != null
+//                        && TARGET_YT.contains(invoice.getFphm()))
                 .collect(Collectors.toList());
 
         if (targetInvoices.isEmpty()) {

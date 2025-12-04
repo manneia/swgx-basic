@@ -65,7 +65,7 @@ public class ScheduledSyncTask {
         LocalDate today = LocalDate.now();
 
         List<String> taxpayerList = TaxpayerRegistry.getTaxpayerList();
-        if (taxpayerList == null || taxpayerList.isEmpty()) {
+        if (taxpayerList.isEmpty()) {
             log.warn("纳税人识别号列表为空，跳过本次同步");
             return;
         }
@@ -151,7 +151,7 @@ public class ScheduledSyncTask {
         LocalDate start = today.minusMonths(5).withDayOfMonth(1); // 半年前的第一天
 
         List<String> taxpayerList = TaxpayerRegistry.getTaxpayerList();
-        if (taxpayerList == null || taxpayerList.isEmpty()) {
+        if (taxpayerList.isEmpty()) {
             log.warn("纳税人识别号列表为空，跳过本次海关缴款书查询");
             return;
         }
@@ -271,7 +271,7 @@ public class ScheduledSyncTask {
 		log.info("=== 开始往期勾选发票信息同步任务 ===");
 
 		List<String> taxpayerList = TaxpayerRegistry.getTaxpayerList();
-		if (taxpayerList == null || taxpayerList.isEmpty()) {
+		if (taxpayerList.isEmpty()) {
 			log.warn("纳税人识别号列表为空，跳过往期勾选发票同步");
 			return;
 		}
