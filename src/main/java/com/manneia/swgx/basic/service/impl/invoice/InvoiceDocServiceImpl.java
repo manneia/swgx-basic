@@ -152,9 +152,19 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     PushInvoiceDocDetail pushInvoiceDocDetail = docDetailMap.get(goodsZxbm);
                     // 创建折扣行（fphxz=1，金额为负数）
                     JSONObject discountLine = getDiscountGoodsLine(pushInvoiceDocDetail, goodInfo, discountRate);
+                    if (goodsList.isEmpty()) {
+                        discountLine.put(BasicKey.SERIAL_NUM, 1);
+                    } else {
+                        discountLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                    }
                     goodsList.add(discountLine);
                     // 创建被折扣行（fphxz=2，金额为正数）
                     JSONObject originalGoodsLine = getOriginalGoodsLine(pushInvoiceDocDetail, goodInfo);
+                    if (goodsList.isEmpty()) {
+                        originalGoodsLine.put(BasicKey.SERIAL_NUM, 1);
+                    } else {
+                        originalGoodsLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                    }
                     goodsList.add(originalGoodsLine);
                 }
             } catch (Exception e) {
@@ -197,6 +207,11 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     originalGoodsTotalPrice.set(originalGoodsTotalPrice.get().add(goodsTotalAmountTax));
                     JSONObject goods = new JSONObject();
                     handlerDiscountInfo(invoiceDocDetail, goodsDetail, goods);
+                    if (goodsList.isEmpty()) {
+                        goods.put(BasicKey.SERIAL_NUM, 1);
+                    } else {
+                        goods.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                    }
                     goods.put(BasicKey.GOODS_TOTAL_PRICE_TAX, goodsTotalAmountTax);
                     goods.put(BasicKey.GOODS_TOTAL_TAX, goodsTotalAmountTax.subtract(goodsPriceExcludeTax.multiply(invoiceDocDetail.getGoodsQuantity())));
                     goods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
@@ -241,6 +256,8 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
     private static JSONObject getDiscountGoodsLine(PushInvoiceDocDetail invoiceDocDetail, JSONObject goodInfo, BigDecimal discountRate) {
         JSONObject discountLine = new JSONObject();
         handlerDiscountInfo(invoiceDocDetail, goodInfo, discountLine);
+        goodInfo.remove(BasicKey.GOODS_PRICE);
+        goodInfo.remove(BasicKey.GOODS_QUANTITY);
         BigDecimal goodsPrice = goodInfo.getBigDecimal(BasicKey.GOODS_PRICE);
         // 金额为负数
         BigDecimal lineDiscountPrice;

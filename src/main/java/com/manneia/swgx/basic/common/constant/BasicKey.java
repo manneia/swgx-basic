@@ -9,6 +9,8 @@ package com.manneia.swgx.basic.common.constant;
 public class BasicKey {
 
 
+    public static final String SERIAL_NUM = "xh";
+
     private BasicKey() {
     }
 
