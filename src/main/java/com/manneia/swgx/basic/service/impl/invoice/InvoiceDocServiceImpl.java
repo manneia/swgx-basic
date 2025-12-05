@@ -150,14 +150,6 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     JSONObject goodInfo = discountGoodsList.getJSONObject(i);
                     String goodsZxbm = goodInfo.getString(BasicKey.GOODS_PERSONAL_CODE);
                     PushInvoiceDocDetail pushInvoiceDocDetail = docDetailMap.get(goodsZxbm);
-                    // 创建折扣行（fphxz=1，金额为负数）
-                    JSONObject discountLine = getDiscountGoodsLine(pushInvoiceDocDetail, goodInfo, discountRate);
-                    if (goodsList.isEmpty()) {
-                        discountLine.put(BasicKey.SERIAL_NUM, 1);
-                    } else {
-                        discountLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
-                    }
-                    goodsList.add(discountLine);
                     // 创建被折扣行（fphxz=2，金额为正数）
                     JSONObject originalGoodsLine = getOriginalGoodsLine(pushInvoiceDocDetail, goodInfo);
                     if (goodsList.isEmpty()) {
@@ -166,6 +158,14 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                         originalGoodsLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
                     }
                     goodsList.add(originalGoodsLine);
+                    // 创建折扣行（fphxz=1，金额为负数）
+                    JSONObject discountLine = getDiscountGoodsLine(pushInvoiceDocDetail, goodInfo, discountRate);
+                    if (goodsList.isEmpty()) {
+                        discountLine.put(BasicKey.SERIAL_NUM, 1);
+                    } else {
+                        discountLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                    }
+                    goodsList.add(discountLine);
                 }
             } catch (Exception e) {
                 log.error("折扣行处理失败:{}", toJSONString(e));
@@ -256,6 +256,8 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
     private static JSONObject getDiscountGoodsLine(PushInvoiceDocDetail invoiceDocDetail, JSONObject goodInfo, BigDecimal discountRate) {
         JSONObject discountLine = new JSONObject();
         handlerDiscountInfo(invoiceDocDetail, goodInfo, discountLine);
+        goodInfo.remove(BasicKey.GOODS_SPECIFICATION);
+        goodInfo.remove(BasicKey.GOODS_UNIT);
         goodInfo.remove(BasicKey.GOODS_PRICE);
         goodInfo.remove(BasicKey.GOODS_QUANTITY);
         BigDecimal goodsPrice = goodInfo.getBigDecimal(BasicKey.GOODS_PRICE);
