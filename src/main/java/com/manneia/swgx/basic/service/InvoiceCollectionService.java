@@ -207,6 +207,7 @@ public class InvoiceCollectionService {
             return;
         }
 
+
         log.info("准备同步 {} 条{}发票状态", records.size(), accounted ? "已入账" : "未入账");
         for (InvoiceCollectionRecord record : records) {
             try {
