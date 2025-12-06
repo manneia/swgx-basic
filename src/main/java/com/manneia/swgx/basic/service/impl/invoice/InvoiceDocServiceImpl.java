@@ -234,6 +234,11 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     normalGoods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
                     normalGoods.put(BasicKey.INVOICE_ITEM_TYPE, "2");
                     normalGoods.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
+                    if (goodsList.isEmpty()) {
+                        normalGoods.put(BasicKey.SERIAL_NUM, 1);
+                    } else {
+                        normalGoods.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                    }
                     goodsList.add(normalGoods);
                     JSONObject discountGoods = new JSONObject();
                     handlerDiscountInfo(invoiceDocDetail, goodsDetail, discountGoods);
@@ -246,6 +251,11 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     discountGoods.put(BasicKey.GOODS_TAX_RATE, goodsDetail.getString(BasicKey.VAT_RATE));
                     discountGoods.put(BasicKey.INVOICE_ITEM_TYPE, "1");
                     discountGoods.put(BasicKey.GOODS_PERSONAL_CODE, invoiceDocDetail.getGoodsPersonalCode());
+                    if (goodsList.isEmpty()) {
+                        discountGoods.put(BasicKey.SERIAL_NUM, 1);
+                    } else {
+                        discountGoods.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                    }
                     goodsList.add(discountGoods);
                 }
                 break;
