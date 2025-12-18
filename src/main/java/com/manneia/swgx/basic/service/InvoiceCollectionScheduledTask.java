@@ -114,7 +114,7 @@ public class InvoiceCollectionScheduledTask {
      * 每半小时同步一次未入账发票状态
      * 优化版：使用并行处理和超时控制
      */
-    @Scheduled(cron = "0 0/30 * * * ?")
+    @Scheduled(cron = "0 30 * * * ?")
     public void syncUnaccountedInvoices() {
         LocalDateTime startTime = LocalDateTime.now();
         log.info("开始执行未入账发票状态同步任务");
