@@ -6,9 +6,9 @@ spring:
   datasource:
     driver-class-name:
     druid:
-      url: jdbc:mysql://192.168.1.216:3306/swgx_zsw?characterEncoding=utf8&useUnicode=true&useSSL=false&serverTimezone=GMT%2B8
-      username: root
-      password: czd321
+      url: jdbc:mysql://192.168.1.233:3306/gxhfw?characterEncoding=utf8&useUnicode=true&useSSL=false&serverTimezone=GMT%2B8
+      username: gxhfw
+      password: eTs2gZ5tyBa#
       driver-class-name: com.mysql.cj.jdbc.Driver
 customize:
   query-company-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/queryUniqueSign

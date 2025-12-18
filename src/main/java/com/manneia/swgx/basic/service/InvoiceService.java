@@ -33,6 +33,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 /**
@@ -82,6 +83,12 @@ public class InvoiceService {
 
 	// 缓存近两个月的往期勾选发票信息，格式：纳税人识别号_月份 -> 发票列表
 	private final Map<String, List<InvoiceHistoryItemDTO>> recentHistoryCache = new HashMap<>();
+	
+	// 配置线程池大小
+	private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
+	
+	// 专用于发票处理的线程池
+	private final ExecutorService invoiceProcessorPool = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
     /**
      * 需要推送的发票类型代码
@@ -95,71 +102,128 @@ public class InvoiceService {
     /**
      * 处理同步返回的发票数据
      * 提取指定类型的发票，保存到数据库并推送
+     * 优化版：使用并行处理
      *
      * @param invoiceList 发票列表
      */
     @Transactional(rollbackFor = Exception.class)
     public void processInvoices(List<InvoiceDTO> invoiceList) {
+        long startTime = System.currentTimeMillis();
         if (invoiceList == null || invoiceList.isEmpty()) {
             log.info("发票列表为空，跳过处理");
             return;
         }
+        
+        log.info("开始处理{}张发票", invoiceList.size());
 
+        // 批量去重：使用Map数据结构去除重复发票
+        Map<String, InvoiceDTO> uniqueInvoices = new HashMap<>();
+        for (InvoiceDTO invoice : invoiceList) {
+            if (invoice.getFphm() == null) continue;
+            String key = invoice.getFphm();
+            uniqueInvoices.put(key, invoice);
+        }
+        log.info("发票去重后仅有{}张", uniqueInvoices.size());
+        
         // 过滤出需要处理的发票类型
-        List<InvoiceDTO> targetInvoices = invoiceList.stream()
-                .filter(invoice -> invoice.getFplxdm() != null
-                        && TARGET_FPLXDM.contains(invoice.getFplxdm()))
-//                .filter(invoice -> invoice.getFphm() != null
-//                        && TARGET_YT.contains(invoice.getFphm()))
+        List<InvoiceDTO> targetInvoices = uniqueInvoices.values().stream()
+                .filter(invoice -> invoice.getFplxdm() != null && TARGET_FPLXDM.contains(invoice.getFplxdm()))
                 .collect(Collectors.toList());
 
         if (targetInvoices.isEmpty()) {
-            log.info("未找到需要处理的发票类型（17,85,86,87,88）");
+            log.info("未找到需要处理的发票");
             return;
         }
 
-        log.info("找到 {} 张需要处理的发票", targetInvoices.size());
+        log.info("找到 {} 张需要处理的发票，开始并行处理", targetInvoices.size());
 
-        for (InvoiceDTO invoiceDTO : targetInvoices) {
-            try {
-                // 检查是否已存在（根据发票代码和号码）
-                PushRecord existingRecord = pushRecordMapper.selectOne(
+        // 并行处理发票
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        
+        // 预查询所有已存在的记录，避免单条查询
+        List<String> allInvoiceNumbers = targetInvoices.stream()
+                .map(InvoiceDTO::getFphm)
+                .collect(Collectors.toList());
+        
+        // 批量查询已存在的记录
+        Map<String, PushRecord> existingRecords = new HashMap<>();
+        if (!allInvoiceNumbers.isEmpty()) {
+            // 分批查询，避免 IN 子句过长
+            List<List<String>> batches = getBatches(allInvoiceNumbers, 500);
+            for (List<String> batch : batches) {
+                List<PushRecord> records = pushRecordMapper.selectList(
                         new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<PushRecord>()
-                                .eq(PushRecord::getFphm, invoiceDTO.getFphm())
-                                .last("LIMIT 1")
+                                .in(PushRecord::getFphm, batch)
                 );
-
-                PushRecord pushRecord;
-                boolean needPush = true;
-                
-                if (existingRecord != null) {
-                    // 更新已有记录
-                    pushRecord = existingRecord;
-                    // 如果已经推送成功，则跳过推送
-                    if ("2".equals(pushRecord.getPushStatus()) && "1".equals(pushRecord.getPushSuccess())) {
-                        needPush = false;
-                        log.info("推送记录已存在且推送成功，跳过推送：{} {}", invoiceDTO.getFpdm(), invoiceDTO.getFphm());
-                    } else {
-                        log.info("更新已存在的推送记录：{} {}", invoiceDTO.getFpdm(), invoiceDTO.getFphm());
-                    }
-                } else {
-                    // 创建新记录
-                    log.info("创建新推送记录：{} {}", invoiceDTO.getFpdm(), invoiceDTO.getFphm());
-                    pushRecord = new PushRecord();
-                    pushRecord.setCreateTime(LocalDateTime.now());
+                for (PushRecord record : records) {
+                    existingRecords.put(record.getFphm(), record);
                 }
-
-                // 转换并保存发票基本信息
-                convertAndSaveInvoice(invoiceDTO, pushRecord);
-
-                // 如果需要推送，则转换为推送请求并推送
-                if (needPush) {
-                    pushInvoice(pushRecord, invoiceDTO);
-                }
-            } catch (Exception e) {
-                log.error("处理发票失败：{} {}", invoiceDTO.getFpdm(), invoiceDTO.getFphm(), e);
             }
+            log.info("预查询到{}条已存在的记录", existingRecords.size());
         }
+        
+        // 创建批量处理任务
+        for (InvoiceDTO invoiceDTO : targetInvoices) {
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                try {
+                    // 根据预查询结果判断是否已存在
+                    PushRecord existingRecord = existingRecords.get(invoiceDTO.getFphm());
+                    PushRecord pushRecord;
+                    boolean needPush = true;
+                    
+                    if (existingRecord != null) {
+                        // 更新已有记录
+                        pushRecord = existingRecord;
+                        // 如果已经推送成功，则跳过推送
+                        if ("2".equals(pushRecord.getPushStatus()) && "1".equals(pushRecord.getPushSuccess())) {
+                            needPush = false;
+                            log.debug("推送记录已存在且推送成功，跳过推送：{}", invoiceDTO.getFphm());
+                        }
+                    } else {
+                        // 创建新记录
+                        pushRecord = new PushRecord();
+                        pushRecord.setCreateTime(LocalDateTime.now());
+                    }
+
+                    // 转换并保存发票基本信息
+                    convertAndSaveInvoice(invoiceDTO, pushRecord);
+
+                    // 如果需要推送，则转换为推送请求并推送
+                    if (needPush) {
+                        pushInvoice(pushRecord, invoiceDTO);
+                    }
+                } catch (Exception e) {
+                    log.error("处理发票失败：{}", invoiceDTO.getFphm(), e);
+                }
+            }, invoiceProcessorPool);
+            
+            futures.add(future);
+        }
+        
+        // 等待所有任务完成
+        try {
+            CompletableFuture<Void> allDone = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+            allDone.join();
+        } catch (Exception e) {
+            log.error("并行处理发票异常", e);
+        }
+        
+        long endTime = System.currentTimeMillis();
+        log.info("发票处理完成，共处理{}张发票，耗时{}ms", targetInvoices.size(), (endTime - startTime));
+    }
+    
+    /**
+     * 将列表分批处理
+     * @param list 原始列表
+     * @param batchSize 批大小
+     * @return 分批后的列表集合
+     */
+    private <T> List<List<T>> getBatches(List<T> list, int batchSize) {
+        List<List<T>> batches = new ArrayList<>();
+        for (int i = 0; i < list.size(); i += batchSize) {
+            batches.add(list.subList(i, Math.min(i + batchSize, list.size())));
+        }
+        return batches;
     }
 
     /**
@@ -753,26 +817,24 @@ public class InvoiceService {
      * @param pushRequest 推送请求
      */
     private void queryAndSetDeductibleStatus(InvoiceDTO invoiceDTO, InvoicePushRequest pushRequest) {
-        log.info("=== 开始查询发票勾选状态（全量接口） ===");
-        log.info("发票代码: {}, 发票号码: {}", invoiceDTO.getFpdm(), invoiceDTO.getFphm());
-
         // 使用购买方识别号
         String nsrsbh = invoiceDTO.getGfsh();
         String fpdm = invoiceDTO.getFpdm();
         String fphm = invoiceDTO.getFphm();
-        String zpfphm= invoiceDTO.getZpfphm();
+        String zpfphm = invoiceDTO.getZpfphm();
 
         if (nsrsbh == null || nsrsbh.isEmpty() || fphm == null) {
-            log.warn("发票信息不完整，无法查询勾选状态，设置为未勾选");
+            log.info("发票信息不完整，无法查询勾选状态，设置为未勾选");
             pushRequest.setDeductible("0");
             return;
         }
 
-        // 调用全量进项发票查询接口
-        InvoiceFullItemDTO fullInvoice = queryFullInvoice(nsrsbh, fpdm, fphm,zpfphm);
+        // 调用查询接口
+        log.info("查询发票勾选状态，发票号: {}", fphm);
+        InvoiceFullItemDTO fullInvoice = queryFullInvoice(nsrsbh, fpdm, fphm, zpfphm);
 
         if (fullInvoice == null) {
-            log.warn("全量发票查询未找到该发票，设置为未勾选");
+            log.info("全量发票查询未找到该发票，设置为未勾选");
             pushRequest.setDeductible("0");
             return;
         }
@@ -780,7 +842,7 @@ public class InvoiceService {
         // 从查询结果中获取勾选状态和勾选时间
         String gxzt = fullInvoice.getGxzt();
         String gxsj = fullInvoice.getGxsj();
-        String fpzt= fullInvoice.getFpzt();
+        String fpzt = fullInvoice.getFpzt();
         pushRequest.setState(fpzt);
 
         log.info("查询到发票勾选状态: {}, 勾选时间: {}", gxzt, gxsj);
@@ -794,8 +856,6 @@ public class InvoiceService {
             pushRequest.setDeductible("0");
             log.info("勾选状态为 {}，设置为未勾选", gxzt);
         }
-
-        log.info("=== 发票勾选状态查询完成 ===");
     }
 
     /**
@@ -804,18 +864,15 @@ public class InvoiceService {
      * @param nsrsbh 纳税人识别号
      * @param fpdm   发票代码
      * @param fphm   发票号码
+     * @param zpfphm 专票发票号码
      * @return 发票信息，查询失败返回null
      */
     private InvoiceFullItemDTO queryFullInvoice(String nsrsbh, String fpdm, String fphm, String zpfphm) {
-        log.info("=== 开始全量进项发票查询 ===");
-        log.info("纳税人识别号: {}, 发票代码: {}, 发票号码: {}", nsrsbh, fpdm, fphm);
-        log.info("全量查询URL: {}", fullQueryApiUrl);
-
         if (fullQueryApiUrl == null || fullQueryApiUrl.isEmpty()) {
-            log.warn("invoice.full.query.api.url 未配置，跳过全量发票查询");
+            log.info("invoice.full.query.api.url 未配置，跳过全量发票查询");
             return null;
         }
-
+        
         try {
             // 构建请求参数
             InvoiceFullQueryRequest request = new InvoiceFullQueryRequest();
@@ -823,52 +880,40 @@ public class InvoiceService {
             request.setNsrsbh(nsrsbh);
             request.setFpdm(fpdm);
             request.setFphm(fphm);
-            // 设置分页参数（只查询一条）
             request.setPageNumber("1");
             request.setPageSize("1");
 
-            log.info("=== 调用全量进项发票查询接口 ===");
-            log.info("URL: {}", fullQueryApiUrl);
-            log.info("请求参数: {}", JSON.toJSONString(request));
-
+            log.info("调用发票查询接口，发票号={}", fphm);
             String responseStr = bwHttpUtil.httpPostRequest(fullQueryApiUrl, JSON.toJSONString(request), "json");
 
-            log.info("=== 全量进项发票查询接口响应 ===");
-            log.info("发票代码: {}, 发票号码: {}", fpdm, fphm);
-            log.info("响应结果: {}", responseStr);
-
             if (responseStr == null || responseStr.isEmpty()) {
-                log.warn("全量发票查询失败：{} {}，响应为空", fpdm, fphm);
+                log.info("查询响应为空, 发票号={}", fphm);
                 return null;
             }
 
             InvoiceFullQueryResponse response = JSON.parseObject(responseStr, InvoiceFullQueryResponse.class);
 
             if (response == null || response.getCode() == null || response.getCode() != 0) {
-                log.warn("全量发票查询失败：{} {}，响应码: {}, 消息: {}",
-                        fpdm, fphm,
-                        response != null ? response.getCode() : "null",
-                        response != null ? response.getMsg() : "null");
+                log.info("查询失败, 发票号={}, 响应码={}", fphm,
+                        response != null ? response.getCode() : "null");
                 return null;
             }
 
             if (response.getData() == null || response.getData().isEmpty()) {
-                log.warn("全量发票查询返回空数据：{} {}", fpdm, fphm);
+                log.info("查询返回空数据, 发票号={}", fphm);
                 return null;
             }
 
-            // 取第一条全量记录
+            // 返回第一条结果
             InvoiceFullItemDTO invoice = response.getData().get(0);
-            log.info("=== 全量发票查询成功 ===");
-            log.info("发票ID: {}, 发票状态: {}, 勾选状态: {}, 勾选时间: {}",
-                    invoice.getFpid(), invoice.getFpzt(), invoice.getGxzt(), invoice.getGxsj());
-
-            // 直接使用全量接口返回的数据写入发票采集记录表（基础信息）
-            saveInvoiceCollectionRecordIfAbsent(invoice,zpfphm);
-
+            log.info("查询成功, 发票号={}, 勾选状态={}", fphm, invoice.getGxzt());
+            
+            // 保存到采集记录表
+            saveInvoiceCollectionRecordIfAbsent(invoice, zpfphm);
+            
             return invoice;
         } catch (Exception e) {
-            log.error("=== 全量进项发票查询异常 ===", e);
+            log.error("发票查询异常, 发票号={}", fphm, e);
             return null;
         }
     }
@@ -880,7 +925,8 @@ public class InvoiceService {
         if (fullInvoice == null ||  fullInvoice.getFphm() == null) {
             return;
         }
-
+        
+        // 查询发票是否已存在
         LambdaQueryWrapper<InvoiceCollectionRecord> wrapper = new LambdaQueryWrapper<InvoiceCollectionRecord>()
                 .eq(InvoiceCollectionRecord::getInvoiceNumber, fullInvoice.getFphm())
                 .last("LIMIT 1");
@@ -889,6 +935,7 @@ public class InvoiceService {
             return;
         }
 
+        // 创建记录对象
         InvoiceCollectionRecord record = new InvoiceCollectionRecord();
         record.setInvoiceType(fullInvoice.getFplxdm());
         record.setInvoiceCode(fullInvoice.getFpdm());
@@ -926,13 +973,10 @@ public class InvoiceService {
             record.setCheckDate(LocalDate.parse(gxsj, DATE_FORMATTER));
         }
 
-
         record.setCreateTime(LocalDateTime.now());
         record.setUpdateTime(LocalDateTime.now());
-
-        log.info("=== 保存发票采集记录 ===");
-        log.info("发票号码: {}, 发票状态: {}, 勾选状态: {}, 勾选时间: {}",
-                record.getInvoiceNumber(), record.getInvoiceStatus(), record.getCheckStatus(), record.getCheckDate());
+        
+        log.info("保存发票采集记录, 发票号={}", fullInvoice.getFphm());
         invoiceCollectionRecordMapper.insert(record);
     }
 

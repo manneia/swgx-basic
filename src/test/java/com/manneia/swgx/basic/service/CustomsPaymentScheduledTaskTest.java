@@ -31,8 +31,8 @@ class CustomsPaymentScheduledTaskTest {
         String req = "{\n" +
                 "    \"czlsh\": \"43dcfc8b8d9344af855ad5eb47a5e031\",\n" +
                 "    \"nsrsbh\": \"913101156072273832\",\n" +
-                "    \"tfrqq\": \"20251113\",\n" +
-                "    \"tfrqz\": \"20251113\",\n" +
+                "    \"tfrqq\": \"20251201\",\n" +
+                "    \"tfrqz\": \"20251217\",\n" +
                 "    \"rzzt\": \"\"\n" +
                 "}";
 

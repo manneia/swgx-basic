@@ -31,12 +31,18 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -94,12 +100,31 @@ public class InvoiceCollectionService {
     // 缓存近两个月的往期勾选发票信息：纳税人识别号_月份 -> 发票列表
     private final Map<String, List<InvoiceHistoryItemDTO>> recentHistoryCache = new HashMap<>();
 
+    // 并行处理线程池
+    private final ExecutorService collectionExecutor = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()));
+            
     /**
      * 按照指定日期采集所有纳税人的发票
+     * 优化版：使用并行处理提高效率
      *
      * @param date 指定日期（yyyy-MM-dd）
      */
     public void collectInvoicesByDate(LocalDate date) {
+        // 默认查询当天和前一天的数据
+        collectInvoicesByDateRange(date.minusDays(1), date);
+    }
+    
+    /**
+     * 按照指定日期范围采集所有纳税人的发票
+     * 优化版：使用并行处理提高效率
+     *
+     * @param startDate 开始日期（包含）
+     * @param endDate 结束日期（包含）
+     */
+    public void collectInvoicesByDateRange(LocalDate startDate, LocalDate endDate) {
+        long startTime = System.currentTimeMillis();
+        
         if (collectionApiUrl == null || collectionApiUrl.isEmpty()) {
             log.warn("invoice.collection.api.url 未配置，跳过发票采集");
             return;
@@ -111,18 +136,32 @@ public class InvoiceCollectionService {
             return;
         }
 
-        String endDate = DATE_FORMATTER.format(date);
-        String startDate = DATE_FORMATTER.format(date.minusDays(1));
-
+        String formattedEndDate = DATE_FORMATTER.format(endDate);
+        String formattedStartDate = DATE_FORMATTER.format(startDate);
+        
+        log.info("开始并行采集 {} 个纳税人的发票数据", taxpayerList.size());
+        
+        // 使用并行流处理每个纳税人
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (String taxNo : taxpayerList) {
-            try {
-                log.info("开始采集纳税人 {} 的发票数据，开始日期 {}，结束日期 {}", taxNo, startDate, endDate);
-                fetchAndStoreInvoices(taxNo, startDate, endDate);
-            } catch (Exception e) {
-                log.error("纳税人 {} 发票采集异常", taxNo, e);
-                // 不中断其他纳税人
-            }
+            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                try {
+                    log.info("开始采集纳税人 {} 的发票数据，开始日期 {}，结束日期 {}", taxNo, formattedStartDate, formattedEndDate);
+                    fetchAndStoreInvoices(taxNo, formattedStartDate, formattedEndDate);
+                    log.info("纳税人 {} 发票采集完成", taxNo);
+                } catch (Exception e) {
+                    log.error("纳税人 {} 发票采集异常", taxNo, e);
+                }
+            }, collectionExecutor);
+            
+            futures.add(future);
         }
+        
+        // 等待所有任务完成
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        
+        long endTime = System.currentTimeMillis();
+        log.info("全部纳税人发票采集完成，耗时{}ms", (endTime - startTime));
     }
 
     private void fetchAndStoreInvoices(String taxNo, String startDate, String endDate) {
@@ -187,7 +226,13 @@ public class InvoiceCollectionService {
         syncInvoicesByEntryStatus(false);
     }
 
+    /**
+     * 同步发票状态，根据入账状态进行分组和批量处理
+     * 优化版：添加批量处理和并行执行
+     */
     private void syncInvoicesByEntryStatus(boolean accounted) {
+        long startTime = System.currentTimeMillis();
+        
         LocalDateTime halfYearAgo = LocalDate.now().minusMonths(6).atStartOfDay();
         LambdaQueryWrapper<InvoiceCollectionRecord> wrapper = new LambdaQueryWrapper<InvoiceCollectionRecord>()
                 .ge(InvoiceCollectionRecord::getInvoiceDate, halfYearAgo)
@@ -207,57 +252,144 @@ public class InvoiceCollectionService {
             return;
         }
 
-
-        log.info("准备同步 {} 条{}发票状态", records.size(), accounted ? "已入账" : "未入账");
-        for (InvoiceCollectionRecord record : records) {
+        int batchSize = 50; // 每批处理数量
+        int totalRecords = records.size();
+        log.info("准备并行同步 {} 条{}发票状态", totalRecords, accounted ? "已入账" : "未入账");
+        
+        // 将记录分批处理，每批并行执行
+        List<List<InvoiceCollectionRecord>> batches = new ArrayList<>();
+        for (int i = 0; i < totalRecords; i += batchSize) {
+            int end = Math.min(i + batchSize, totalRecords);
+            batches.add(records.subList(i, end));
+        }
+        
+        log.info("分为 {} 批进行同步处理", batches.size());
+        
+        int completedCount = 0;
+        int failedCount = 0;
+        
+        // 按批次顺序处理（每批内并行）
+        for (List<InvoiceCollectionRecord> batch : batches) {
+            // 并行处理当前批次
+            List<CompletableFuture<Boolean>> batchFutures = new ArrayList<>();
+            
+            for (InvoiceCollectionRecord record : batch) {
+                CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        syncSingleInvoiceStatus(record);
+                        return true;
+                    } catch (Exception e) {
+                        log.error("同步发票状态失败：{} {}", record.getInvoiceCode(), record.getInvoiceNumber(), e);
+                        return false;
+                    }
+                }, collectionExecutor);
+                
+                batchFutures.add(future);
+            }
+            
+            // 等待当前批次完成
+            CompletableFuture<Void> allDone = CompletableFuture.allOf(
+                    batchFutures.toArray(new CompletableFuture[0]));
+            
             try {
-                syncSingleInvoiceStatus(record);
+                // 等待当前批次完成
+                allDone.join();
+                
+                // 统计成功和失败数
+                for (CompletableFuture<Boolean> future : batchFutures) {
+                    if (future.get()) {
+                        completedCount++;
+                    } else {
+                        failedCount++;
+                    }
+                }
+                
+                log.info("已完成 {}/{} 条发票状态同步", completedCount, totalRecords);
+                
             } catch (Exception e) {
-                log.error("同步发票状态失败：{} {}", record.getInvoiceCode(), record.getInvoiceNumber(), e);
+                log.error("等待批量同步完成异常", e);
             }
         }
+        
+        long endTime = System.currentTimeMillis();
+        log.info("同步{}发票状态完成，成功{}条，失败{}条，耗时{}ms", 
+                accounted ? "已入账" : "未入账", completedCount, failedCount, (endTime - startTime));
     }
 
+    /**
+     * 同步单张发票状态
+     * 优化版：添加逻辑判断，减少不必要的API调用
+     */
     private void syncSingleInvoiceStatus(InvoiceCollectionRecord record) {
+        // 校验发票记录完整性
+        if (record.getInvoiceNumber() == null || record.getInvoiceCode() == null) {
+            log.warn("发票记录不完整，跳过同步，发票号={}", 
+                    record.getInvoiceNumber() != null ? record.getInvoiceNumber() : "null");
+            return;
+        }
+        
+        // 检查上次同步时间，避免频繁同步
+        LocalDateTime lastUpdateTime = record.getUpdateTime();
+        LocalDateTime now = LocalDateTime.now();
+        // 如果距上次同步时间小于1小时，则跳过（非未入账发票）
+        boolean isUnaccounted = "01".equals(record.getEntryStatus()) || "06".equals(record.getEntryStatus());
+        if (!isUnaccounted && lastUpdateTime != null && 
+                Duration.between(lastUpdateTime, now).toHours() < 1) {
+            log.debug("发票近期已同步，跳过，发票号={}", record.getInvoiceNumber());
+            return;
+        }
+        
         // 使用全量进项发票查询接口获取最新的发票状态、勾选状态和入账状态
         InvoiceFullItemDTO fullInvoice = queryFullInvoiceByRecord(record);
         if (fullInvoice == null) {
-            log.warn("全量发票查询失败，跳过同步：{} {}", record.getInvoiceCode(), record.getInvoiceNumber());
+            log.warn("全量发票查询失败，跳过同步，发票号={}", record.getInvoiceNumber());
             return;
         }
 
         String newInvoiceStatus = fullInvoice.getFpzt();
         String newCheckStatus = fullInvoice.getGxzt();
         String newEntryStatus = fullInvoice.getRzyt();
-
-        if (equals(record.getInvoiceStatus(), newInvoiceStatus)
-                && equals(record.getCheckStatus(), newCheckStatus)
-                && equals(record.getEntryStatus(), newEntryStatus)) {
-            log.debug("发票状态未变化：{} {}", record.getInvoiceCode(), record.getInvoiceNumber());
-            return;
-        }
-
         String oldInvoiceStatus = record.getInvoiceStatus();
         String oldCheckStatus = record.getCheckStatus();
         String oldEntryStatus = record.getEntryStatus();
-
-
-        // 只要有任意一个状态发生变化，就调用一次状态变更接口
-        if ((!equals(oldInvoiceStatus, newInvoiceStatus) && newInvoiceStatus != null)
-                || (!equals(oldCheckStatus, newCheckStatus) && newCheckStatus != null)
-                || (!equals(oldEntryStatus, newEntryStatus) && newEntryStatus != null)) {
+        
+        // 检查各状态是否发生变化
+        boolean invoiceStatusChanged = !equals(oldInvoiceStatus, newInvoiceStatus) && newInvoiceStatus != null;
+        boolean checkStatusChanged = !oldCheckStatus.equals(newCheckStatus)
+                && newCheckStatus != null
+                && !"-1".equals(oldCheckStatus);
+        boolean entryStatusChanged = !equals(oldEntryStatus, newEntryStatus) && newEntryStatus != null;
+        
+        // 判断是否有状态变化
+        if (invoiceStatusChanged || checkStatusChanged || entryStatusChanged) {
+            // 记录状态变化日志
+            log.info("发票状态变化，发票号={}，发票状态: {}->{}, 勾选状态: {}->{}, 入账状态: {}->{}", 
+                    record.getInvoiceNumber(),
+                    oldInvoiceStatus, newInvoiceStatus,
+                    oldCheckStatus, newCheckStatus,
+                    oldEntryStatus, newEntryStatus);
+            
             try {
                 boolean success = callStateChangeApi(record,
                         oldInvoiceStatus, oldCheckStatus, oldEntryStatus,
                         newInvoiceStatus, newCheckStatus, newEntryStatus,
                         fullInvoice.getGxsj());
+                
                 // 只有当状态变更接口调用成功时，才使用全量数据更新采集记录
                 if (success) {
                     updateRecordWithFullData(record, fullInvoice);
+                    log.info("发票状态同步成功，发票号={}", record.getInvoiceNumber());
+                } else {
+                    log.warn("发票状态变更接口调用失败，发票号={}", record.getInvoiceNumber());
                 }
             } catch (Exception e) {
-                log.error("调用状态变更接口失败：{} {}", record.getInvoiceCode(), record.getInvoiceNumber(), e);
+                log.error("调用状态变更接口异常，发票号={}", record.getInvoiceNumber(), e);
             }
+        } else {
+            // 即使没有状态变化，也更新更新时间以避免频繁同步
+            record.setUpdateTime(now);
+            recordMapper.updateById(record);
+            log.debug("发票状态未变化，更新时间戳，发票号={}", record.getInvoiceNumber());
         }
     }
 
@@ -460,12 +592,16 @@ public class InvoiceCollectionService {
         statusChangeLogMapper.insert(logEntity);
     }
 
+    // 最大重试次数
+    private static final int MAX_RETRY_COUNT = 3;
+    
     /**
      * 根据采集记录调用全量进项发票查询接口
+     * 优化版：添加重试机制
      */
     private InvoiceFullItemDTO queryFullInvoiceByRecord(InvoiceCollectionRecord record) {
-        log.info("=== 开始全量进项发票查询（采集记录） ===");
-        log.info("发票代码: {}, 发票号码: {}", record.getInvoiceCode(), record.getInvoiceNumber());
+        log.debug("=== 开始全量进项发票查询（采集记录） ===");
+        log.debug("发票代码: {}, 发票号码: {}", record.getInvoiceCode(), record.getInvoiceNumber());
 
         if (fullQueryApiUrl == null || fullQueryApiUrl.isEmpty()) {
             log.warn("invoice.full.query.api.url 未配置，跳过全量发票查询");
@@ -484,55 +620,81 @@ public class InvoiceCollectionService {
             return null;
         }
 
-        try {
-            InvoiceFullQueryRequest request = new InvoiceFullQueryRequest();
-            request.setCzlsh(UUID.randomUUID().toString().replace("-", ""));
-            request.setNsrsbh(nsrsbh);
-            request.setFpdm(record.getInvoiceCode());
-            request.setFphm(record.getInvoiceNumber());
-            request.setPageNumber("1");
-            request.setPageSize("1");
+        // 准备请求参数
+        InvoiceFullQueryRequest request = new InvoiceFullQueryRequest();
+        request.setCzlsh(UUID.randomUUID().toString().replace("-", ""));
+        request.setNsrsbh(nsrsbh);
+        request.setFpdm(record.getInvoiceCode());
+        request.setFphm(record.getInvoiceNumber());
+        request.setPageNumber("1");
+        request.setPageSize("1");
+        
+        // 执行重试逻辑
+        for (int retryCount = 0; retryCount < MAX_RETRY_COUNT; retryCount++) {
+            try {
+                if (retryCount > 0) {
+                    // 非第一次尝试，等待一段时间再重试（指数退避策略）
+                    long waitTimeMillis = (long) Math.pow(2, retryCount) * 1000;
+                    log.info("第{}次重试查询发票，等待{}ms后进行，发票号={}", 
+                            retryCount + 1, waitTimeMillis, record.getInvoiceNumber());
+                    Thread.sleep(waitTimeMillis);
+                }
+                
+                log.info("调用全量进项发票查询接口，发票号={}", record.getInvoiceNumber());
+                log.info("调用参数：{}",request.toString());
+                String responseStr = bwHttpUtil.httpPostRequest(fullQueryApiUrl, JSON.toJSONString(request), "json");
 
-            log.info("调用全量进项发票查询接口，url={}，请求参数={}", fullQueryApiUrl, JSON.toJSONString(request));
+                log.info("返回参数：{}", responseStr);
+                if (responseStr == null || responseStr.isEmpty()) {
+                    log.warn("全量发票查询响应为空，发票号={}，尝试{}/{}", 
+                            record.getInvoiceNumber(), retryCount + 1, MAX_RETRY_COUNT);
+                    continue; // 重试
+                }
 
-            String responseStr = bwHttpUtil.httpPostRequest(fullQueryApiUrl, JSON.toJSONString(request), "json");
+                InvoiceFullQueryResponse response = JSON.parseObject(responseStr, InvoiceFullQueryResponse.class);
 
-            log.info("全量进项发票查询接口返回，url={}，发票代码={}，发票号码={}，响应={}",
-                    fullQueryApiUrl, record.getInvoiceCode(), record.getInvoiceNumber(), responseStr);
+                if (response == null || response.getCode() == null || response.getCode() != 0) {
+                    log.warn("全量发票查询失败，发票号={}，响应码={}，尝试{}/{}", 
+                            record.getInvoiceNumber(),
+                            response != null ? response.getCode() : "null",
+                            retryCount + 1, MAX_RETRY_COUNT);
+                    
+                    // 判断是否需要重试（某些错误代码可能不需要重试）
+                    Integer code = response != null ? response.getCode() : null;
+                    if (code != null && (code == 404 || code == 400)) {
+                        // 不需要重试的错误代码
+                        return null;
+                    }
+                    
+                    continue; // 重试
+                }
 
-            if (responseStr == null || responseStr.isEmpty()) {
-                log.warn("全量发票查询失败：{} {}，响应为空",
-                        record.getInvoiceCode(), record.getInvoiceNumber());
-                return null;
+                if (response.getData() == null || response.getData().isEmpty()) {
+                    log.warn("全量发票查询返回空数据，发票号={}", record.getInvoiceNumber());
+                    return null; // 数据为空不需要重试
+                }
+
+                // 查询成功
+                InvoiceFullItemDTO invoice = response.getData().get(0);
+                log.debug("发票查询成功，发票号={}，勾选状态={}，入账状态={}", 
+                        record.getInvoiceNumber(), invoice.getGxzt(), invoice.getRzyt());
+                return invoice;
+                
+            } catch (Exception e) {
+                log.warn("全量发票查询异常，发票号={}，尝试{}/{}", 
+                        record.getInvoiceNumber(), retryCount + 1, MAX_RETRY_COUNT, e);
+                
+                // 如果是最后一次尝试，记录详细错误
+                if (retryCount == MAX_RETRY_COUNT - 1) {
+                    log.error("全量发票查询最终失败，发票号={}", record.getInvoiceNumber(), e);
+                }
             }
-
-            InvoiceFullQueryResponse response = JSON.parseObject(responseStr, InvoiceFullQueryResponse.class);
-
-            if (response == null || response.getCode() == null || response.getCode() != 0) {
-                log.warn("全量发票查询失败：{} {}，响应码: {}, 消息: {}",
-                        record.getInvoiceCode(), record.getInvoiceNumber(),
-                        response != null ? response.getCode() : "null",
-                        response != null ? response.getMsg() : "null");
-                return null;
-            }
-
-            if (response.getData() == null || response.getData().isEmpty()) {
-                log.warn("全量发票查询返回空数据：{} {}",
-                        record.getInvoiceCode(), record.getInvoiceNumber());
-                return null;
-            }
-
-            InvoiceFullItemDTO invoice = response.getData().get(0);
-            log.info("=== 全量发票查询成功 ===");
-            log.info("发票ID: {}, 发票状态: {}, 勾选状态: {}, 勾选时间: {},入账状态: {}",
-                    invoice.getFpid(), invoice.getFpzt(), invoice.getGxzt(), invoice.getGxsj(), invoice.getRzyt());
-            return invoice;
-
-        } catch (Exception e) {
-            log.error("=== 全量发票查询异常 ===");
-            log.error("全量发票查询异常：{} {}", record.getInvoiceCode(), record.getInvoiceNumber(), e);
-            return null;
         }
+        
+        // 所有重试均失败
+        log.error("全量发票查询已达最大重试次数{}，仍然失败，发票号={}", 
+                MAX_RETRY_COUNT, record.getInvoiceNumber());
+        return null;
     }
 
     /**
@@ -570,9 +732,14 @@ public class InvoiceCollectionService {
         return amount.add(tax);
     }
 
-    /**用发票状态变更接口（根据当前采集记录），并在调用后写入状态变更日志。
-     * 调
-     * 返回 true 表示接口调用成功（响应不为空且 status == 0），否则为 false。
+    // 状态变更接口的最大重试次数
+    private static final int STATE_CHANGE_MAX_RETRY = 3;
+
+    /**
+     * 调用发票状态变更接口（根据当前采集记录），并在调用后写入状态变更日志。
+     * 优化版：添加重试机制
+     * 
+     * @return true 表示接口调用成功（响应不为空且 status == 0），否则为 false。
      */
     private boolean callStateChangeApi(InvoiceCollectionRecord record,
                                        String oldInvoiceStatus,
@@ -587,6 +754,7 @@ public class InvoiceCollectionService {
             return false;
         }
 
+        // 准备请求参数
         InvoiceStateChangeRequest request = new InvoiceStateChangeRequest();
         request.setInvoiceType(record.getInvoiceType());
         request.setInvoiceCode(record.getInvoiceCode());
@@ -618,33 +786,112 @@ public class InvoiceCollectionService {
         InvoiceApiSupport.HeaderPackage headerPackage = invoiceApiSupport.buildHeaders();
         HttpEntity<InvoiceStateChangeRequest> entity = new HttpEntity<>(request, headerPackage.getHeaders());
 
-        log.info("调用发票状态变更接口(采集记录)，url={}，请求参数={}", stateChangeApiUrl, JSON.toJSONString(request));
+        log.debug("调用发票状态变更接口，发票号={}", record.getInvoiceNumber());
 
-        InvoiceStateChangeResponse response = restTemplate.postForObject(
-                stateChangeApiUrl, entity, InvoiceStateChangeResponse.class);
+        InvoiceStateChangeResponse response = null;
+        String requestId = headerPackage.getRequestId();
+        
+        // 执行重试逻辑
+        for (int retryCount = 0; retryCount < STATE_CHANGE_MAX_RETRY; retryCount++) {
+            try {
+                if (retryCount > 0) {
+                    // 非第一次尝试，等待一段时间再重试（指数退避策略）
+                    long waitTimeMillis = (long) Math.pow(2, retryCount) * 1000;
+                    log.info("第{}次重试状态变更推送，等待{}ms后进行，发票号={}", 
+                            retryCount + 1, waitTimeMillis, record.getInvoiceNumber());
+                    Thread.sleep(waitTimeMillis);
+                    
+                    // 重新生成请求头，避免重复使用过期的认证信息
+                    headerPackage = invoiceApiSupport.buildHeaders();
+                    entity = new HttpEntity<>(request, headerPackage.getHeaders());
+                    requestId = headerPackage.getRequestId();
+                }
 
-        log.info("发票状态变更接口返回(采集记录)，url={}，发票代码={}，发票号码={}，响应={}",
-                stateChangeApiUrl, record.getInvoiceCode(), record.getInvoiceNumber(), JSON.toJSONString(response));
+                // 执行接口调用
+                response = restTemplate.postForObject(stateChangeApiUrl, entity, InvoiceStateChangeResponse.class);
+                
+                // 检查响应是否有效
+                if (response == null) {
+                    log.warn("状态变更接口响应为空，发票号={}，尝试{}/{}", 
+                            record.getInvoiceNumber(), retryCount + 1, STATE_CHANGE_MAX_RETRY);
+                    continue; // 重试
+                }
+                
+                Integer status = response.getStatus();
+                if (status == null || status != 0) {
+                    // 判断是否是临时错误，需要重试
+                    boolean shouldRetry = shouldRetryStateChange(status);
+                    
+                    log.warn("状态变更接口调用失败，status={}，msg={}，发票号={}，{}", 
+                            status, response.getMsg(), record.getInvoiceNumber(), 
+                            shouldRetry ? "将重试" : "不再重试");
+                    
+                    if (!shouldRetry) {
+                        // 某些错误不需要重试，如参数错误、权限错误等
+                        break;
+                    }
+                    
+                    continue; // 需要重试的错误
+                }
+                
+                // 调用成功
+                log.info("状态变更接口调用成功，发票号={}", record.getInvoiceNumber());
+                break;
+                
+            } catch (Exception e) {
+                log.warn("状态变更接口调用异常，发票号={}，尝试{}/{}", 
+                        record.getInvoiceNumber(), retryCount + 1, STATE_CHANGE_MAX_RETRY, e);
+                
+                // 如果是最后一次尝试，记录详细错误
+                if (retryCount == STATE_CHANGE_MAX_RETRY - 1) {
+                    log.error("状态变更接口调用最终失败，发票号={}", record.getInvoiceNumber(), e);
+                }
+            }
+        }
 
         // 在接口调用完成后，记录一次综合的状态变更日志（无论成功失败都记录一条）
         saveStatusChangeLog(record,
                 oldInvoiceStatus, oldCheckStatus, oldEntryStatus,
                 newInvoiceStatus, newCheckStatus, newEntryStatus,
-                headerPackage.getRequestId(), request, response);
+                requestId, request, response);
 
         // 解析响应结果，只有当 status == 0 时认为调用成功
         if (response == null) {
-            log.warn("发票状态变更接口返回为空，视为调用失败");
             return false;
         }
+        
         Integer status = response.getStatus();
-        if (status == null || status != 0) {
-            log.warn("发票状态变更接口调用失败，status={}，msg={}",
-                    response.getStatus(), response.getMsg());
-            return false;
+        return status != null && status == 0;
+    }
+    
+    /**
+     * 判断状态变更接口是否需要重试
+     * @param status 状态码
+     * @return 是否应该重试
+     */
+    private boolean shouldRetryStateChange(Integer status) {
+        if (status == null) {
+            return true; // 未知状态默认重试
         }
-
-        return true;
+        
+        // 根据状态码判断是否需要重试
+        // 这里列出一些不需要重试的状态码，如参数错误、权限错误等
+        // 需要根据实际API文档调整
+        switch (status) {
+            case 400: // 参数错误
+            case 401: // 未授权
+            case 403: // 禁止访问
+            case 404: // 资源不存在
+                return false; // 这些错误一般不需要重试
+            case 429: // 请求过多
+            case 500: // 服务器内部错误
+            case 502: // 网关错误
+            case 503: // 服务不可用
+            case 504: // 网关超时
+                return true;  // 这些错误一般需要重试
+            default:
+                return status >= 500; // 服务器类错误需要重试
+        }
     }
 
     private boolean equals(String a, String b) {
@@ -690,6 +937,26 @@ public class InvoiceCollectionService {
         } catch (Exception e) {
             log.warn("解析金额失败：{}", value, e);
             return null;
+        }
+    }
+    
+    /**
+     * 在应用关闭时释放资源
+     */
+    @PreDestroy
+    public void shutdown() {
+        log.info("正在关闭发票采集服务线程池...");
+        try {
+            // 优雅关闭线程池
+            collectionExecutor.shutdown();
+            if (!collectionExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                log.warn("线程池未在指定时间内结束，强制关闭");
+                collectionExecutor.shutdownNow();
+            }
+            log.info("发票采集服务线程池关闭成功");
+        } catch (Exception e) {
+            log.error("关闭线程池异常", e);
+            collectionExecutor.shutdownNow();
         }
     }
 }

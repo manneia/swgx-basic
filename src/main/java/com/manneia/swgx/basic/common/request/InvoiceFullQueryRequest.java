@@ -270,4 +270,62 @@ public class InvoiceFullQueryRequest implements Serializable {
      * 每页大小
      */
     private String pageSize;
+
+
+    @Override
+    public String toString() {
+        return "{" +
+                "czlsh='" + czlsh + '\'' +
+                ", nsrsbh='" + nsrsbh + '\'' +
+                ", fplxdm='" + fplxdm + '\'' +
+                ", fpzt='" + fpzt + '\'' +
+                ", fpdm='" + fpdm + '\'' +
+                ", fphm='" + fphm + '\'' +
+                ", xfmc='" + xfmc + '\'' +
+                ", xfsh='" + xfsh + '\'' +
+                ", kprqq='" + kprqq + '\'' +
+                ", kprqz='" + kprqz + '\'' +
+                ", cjpc='" + cjpc + '\'' +
+                ", cjzt='" + cjzt + '\'' +
+                ", cjr='" + cjr + '\'' +
+                ", cjsjq='" + cjsjq + '\'' +
+                ", cjsjz='" + cjsjz + '\'' +
+                ", cypc='" + cypc + '\'' +
+                ", cyzt='" + cyzt + '\'' +
+                ", cyr='" + cyr + '\'' +
+                ", cysjq='" + cysjq + '\'' +
+                ", cysjz='" + cysjz + '\'' +
+                ", bxpc='" + bxpc + '\'' +
+                ", bxzt='" + bxzt + '\'' +
+                ", bxr='" + bxr + '\'' +
+                ", bxsjq='" + bxsjq + '\'' +
+                ", bxsjz='" + bxsjz + '\'' +
+                ", qspc='" + qspc + '\'' +
+                ", qszt='" + qszt + '\'' +
+                ", qsr='" + qsr + '\'' +
+                ", qssjq='" + qssjq + '\'' +
+                ", qssjz='" + qssjz + '\'' +
+                ", jzpc='" + jzpc + '\'' +
+                ", jzzt='" + jzzt + '\'' +
+                ", jzr='" + jzr + '\'' +
+                ", jzsjq='" + jzsjq + '\'' +
+                ", jzsjz='" + jzsjz + '\'' +
+                ", gxzt='" + gxzt + '\'' +
+                ", gxlx='" + gxlx + '\'' +
+                ", gxr='" + gxr + '\'' +
+                ", gxsjq='" + gxsjq + '\'' +
+                ", gxsjz='" + gxsjz + '\'' +
+                ", skssq='" + skssq + '\'' +
+                ", rzyt='" + rzyt + '\'' +
+                ", rzr='" + rzr + '\'' +
+                ", rzsjq='" + rzsjq + '\'' +
+                ", rzsjz='" + rzsjz + '\'' +
+                ", pdzt='" + pdzt + '\'' +
+                ", pdczr='" + pdczr + '\'' +
+                ", pdczrqq='" + pdczrqq + '\'' +
+                ", pdczrqz='" + pdczrqz + '\'' +
+                ", pageNumber='" + pageNumber + '\'' +
+                ", pageSize='" + pageSize + '\'' +
+                '}';
+    }
 }
