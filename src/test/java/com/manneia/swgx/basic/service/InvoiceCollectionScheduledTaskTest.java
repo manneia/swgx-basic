@@ -46,7 +46,7 @@ class InvoiceCollectionScheduledTaskTest {
     private final ExecutorService taskExecutor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
 
     // 任务超时时间（分钟）
-    private static final int TASK_TIMEOUT_MINUTES = 10;
+    private static final int TASK_TIMEOUT_MINUTES = 100;
     /**
      * 每半小时同步一次未入账发票状态
      */

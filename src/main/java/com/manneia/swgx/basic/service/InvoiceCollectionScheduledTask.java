@@ -39,7 +39,7 @@ public class InvoiceCollectionScheduledTask {
     private final ExecutorService taskExecutor = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
     
     // 任务超时时间（分钟）
-    private static final int TASK_TIMEOUT_MINUTES = 10;
+    private static final int TASK_TIMEOUT_MINUTES = 100;
 
     /**
      * 每3小时的第20分钟执行一次，采集最近两天的发票信息。

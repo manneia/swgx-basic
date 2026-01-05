@@ -325,19 +325,20 @@ public class InvoiceCollectionService {
     }
     
     /**
-     * 同步发票状态（优化版）
-     * 策略：先批量查询所有纳税人的全量发票，然后与数据库记录进行比对
+     * 同步发票状态（优化版V2）
+     * 策略：按纳税人+按月分批处理，避免一次性加载太多数据导致OOM
      * 
      * @param accounted true-已入账，false-未入账
      */
     private void syncInvoicesByEntryStatusOptimized(boolean accounted) {
         long startTime = System.currentTimeMillis();
         
-        LocalDateTime halfYearAgo = LocalDate.now().minusMonths(6).atStartOfDay();
+        LocalDate today = LocalDate.now();
+        LocalDate halfYearAgo = today.minusMonths(6);
         
         // 1. 查询数据库中需要同步的发票记录
         LambdaQueryWrapper<InvoiceCollectionRecord> wrapper = new LambdaQueryWrapper<InvoiceCollectionRecord>()
-                .ge(InvoiceCollectionRecord::getInvoiceDate, halfYearAgo);
+                .ge(InvoiceCollectionRecord::getInvoiceDate, halfYearAgo.atStartOfDay());
         if (accounted) {
             wrapper.in(InvoiceCollectionRecord::getEntryStatus, "02", "03");
         } else {
@@ -351,7 +352,7 @@ public class InvoiceCollectionService {
             return;
         }
         
-        log.info("========== 开始优化版发票状态同步 ==========");
+        log.info("========== 开始优化版V2发票状态同步 ==========");
         log.info("数据库中待同步发票数量: {}", dbRecords.size());
         log.info("同步类型: {}", accounted ? "已入账" : "未入账");
         
@@ -362,116 +363,151 @@ public class InvoiceCollectionService {
         
         log.info("涉及纳税人数量: {}", recordsByTaxpayer.size());
         
-        // 3. 批量查询每个纳税人的全量发票
-        Map<String, InvoiceFullItemDTO> fullInvoiceMap = new HashMap<>();
+        // 释放原始列表内存
+        dbRecords = null;
+        
+        int totalUpdatedCount = 0;
+        int totalUnchangedCount = 0;
+        int totalNotFoundCount = 0;
+        int totalProcessed = 0;
         int taxpayerIndex = 0;
         
+        // 3. 逐个纳税人处理
         for (Map.Entry<String, List<InvoiceCollectionRecord>> entry : recordsByTaxpayer.entrySet()) {
             String taxNo = entry.getKey();
+            List<InvoiceCollectionRecord> taxpayerRecords = entry.getValue();
             taxpayerIndex++;
             
-            log.info(">>> [{}/{}] 开始查询纳税人 {} 的全量发票", taxpayerIndex, recordsByTaxpayer.size(), taxNo);
+            log.info(">>> [{}/{}] 开始处理纳税人 {}, 待同步发票数: {}", 
+                    taxpayerIndex, recordsByTaxpayer.size(), taxNo, taxpayerRecords.size());
             
             try {
-                // 查询该纳税人半年内的所有发票
-                List<InvoiceFullItemDTO> fullInvoices = queryFullInvoicesByTaxpayer(
-                        taxNo, 
-                        DATE_FORMATTER.format(halfYearAgo.toLocalDate()), 
-                        DATE_FORMATTER.format(LocalDate.now())
-                );
+                // 按月分组该纳税人的发票
+                Map<String, List<InvoiceCollectionRecord>> recordsByMonth = taxpayerRecords.stream()
+                        .filter(r -> r.getInvoiceDate() != null)
+                        .collect(Collectors.groupingBy(r -> r.getInvoiceDate().format(YYYYMM)));
                 
-                log.info(">>> 纳税人 {} 查询到 {} 张发票", taxNo, fullInvoices.size());
+                int updatedCount = 0;
+                int unchangedCount = 0;
+                int notFoundCount = 0;
                 
-                // 建立发票代码+号码 -> 发票对象的映射
-                for (InvoiceFullItemDTO invoice : fullInvoices) {
-                    String key = invoice.getFpdm() + "_" + invoice.getFphm();
-                    fullInvoiceMap.put(key, invoice);
-                }
-                
-            } catch (Exception e) {
-                log.error(">>> 查询纳税人 {} 的全量发票失败", taxNo, e);
-            }
-        }
-        
-        log.info("全量发票查询完成，共获取 {} 张发票", fullInvoiceMap.size());
-        
-        // 4. 比对并更新状态
-        int updatedCount = 0;
-        int unchangedCount = 0;
-        int notFoundCount = 0;
-        
-        for (InvoiceCollectionRecord dbRecord : dbRecords) {
-            try {
-                String key = dbRecord.getInvoiceCode() + "_" + dbRecord.getInvoiceNumber();
-                InvoiceFullItemDTO fullInvoice = fullInvoiceMap.get(key);
-                
-                if (fullInvoice == null) {
-                    notFoundCount++;
-                    log.debug("发票在全量查询中未找到: {} {}", dbRecord.getInvoiceCode(), dbRecord.getInvoiceNumber());
-                    continue;
-                }
-                
-                // 检查状态是否变化
-                String newInvoiceStatus = fullInvoice.getFpzt();
-                String newCheckStatus = fullInvoice.getGxzt();
-                String newEntryStatus = fullInvoice.getRzyt();
-                String oldInvoiceStatus = dbRecord.getInvoiceStatus();
-                String oldCheckStatus = dbRecord.getCheckStatus();
-                String oldEntryStatus = dbRecord.getEntryStatus();
-                
-                boolean invoiceStatusChanged = !equals(oldInvoiceStatus, newInvoiceStatus) && newInvoiceStatus != null;
-                boolean checkStatusChanged = !equals(oldCheckStatus, newCheckStatus) && newCheckStatus != null;
-                boolean entryStatusChanged = !equals(oldEntryStatus, newEntryStatus) && newEntryStatus != null;
-                
-                if (invoiceStatusChanged || checkStatusChanged || entryStatusChanged) {
-                    log.info("发票状态变化: {} {}, 发票状态: {}->{}, 勾选状态: {}->{}, 入账状态: {}->{}",
-                            dbRecord.getInvoiceCode(), dbRecord.getInvoiceNumber(),
-                            oldInvoiceStatus, newInvoiceStatus,
-                            oldCheckStatus, newCheckStatus,
-                            oldEntryStatus, newEntryStatus);
+                // 按月处理
+                for (Map.Entry<String, List<InvoiceCollectionRecord>> monthEntry : recordsByMonth.entrySet()) {
+                    String month = monthEntry.getKey();
+                    List<InvoiceCollectionRecord> monthRecords = monthEntry.getValue();
                     
-                    // 调用状态变更接口
-                    boolean success = callStateChangeApi(dbRecord,
-                            oldInvoiceStatus, oldCheckStatus, oldEntryStatus,
-                            newInvoiceStatus, newCheckStatus, newEntryStatus,
-                            fullInvoice.getGxsj());
+                    log.info("    >> 处理月份 {}, 发票数: {}", month, monthRecords.size());
                     
-                    if (success) {
-                        updateRecordWithFullData(dbRecord, fullInvoice);
-                        updatedCount++;
+                    // 计算该月的日期范围
+                    LocalDate monthStart = LocalDate.parse(month + "01", DateTimeFormatter.ofPattern("yyyyMMdd"));
+                    LocalDate monthEnd = monthStart.plusMonths(1).minusDays(1);
+                    
+                    // 查询该月的全量发票
+                    Map<String, InvoiceFullItemDTO> monthInvoiceMap = queryFullInvoicesByTaxpayerAsMap(
+                            taxNo,
+                            DATE_FORMATTER.format(monthStart),
+                            DATE_FORMATTER.format(monthEnd)
+                    );
+                    
+                    log.info("    >> 月份 {} 查询到 {} 张发票", month, monthInvoiceMap.size());
+                    
+                    // 比对该月的发票
+                    for (InvoiceCollectionRecord dbRecord : monthRecords) {
+                        try {
+                            String key = dbRecord.getInvoiceCode() + "_" + dbRecord.getInvoiceNumber();
+                            InvoiceFullItemDTO fullInvoice = monthInvoiceMap.get(key);
+                            
+                            if (fullInvoice == null) {
+                                notFoundCount++;
+                                log.warn("发票在全量查询中未找到: {} {}", dbRecord.getInvoiceCode(), dbRecord.getInvoiceNumber());
+                                continue;
+                            }
+                            
+                            // 检查状态是否变化
+                            String newInvoiceStatus = fullInvoice.getFpzt();
+                            String newCheckStatus = fullInvoice.getGxzt();
+                            String newEntryStatus = fullInvoice.getRzyt();
+                            String oldInvoiceStatus = dbRecord.getInvoiceStatus();
+                            String oldCheckStatus = dbRecord.getCheckStatus();
+                            String oldEntryStatus = dbRecord.getEntryStatus();
+                            
+                            boolean invoiceStatusChanged = !equals(oldInvoiceStatus, newInvoiceStatus) && newInvoiceStatus != null;
+                            boolean checkStatusChanged = !equals(oldCheckStatus, newCheckStatus) && newCheckStatus != null;
+                            boolean entryStatusChanged = !equals(oldEntryStatus, newEntryStatus) && newEntryStatus != null;
+                            
+                            if (invoiceStatusChanged || checkStatusChanged || entryStatusChanged) {
+                                log.info("【状态变化】发票: {} {}", dbRecord.getInvoiceCode(), dbRecord.getInvoiceNumber());
+                                if (invoiceStatusChanged) {
+                                    log.info("  - 发票状态: {} -> {}", oldInvoiceStatus, newInvoiceStatus);
+                                }
+                                if (checkStatusChanged) {
+                                    log.info("  - 勾选状态: {} -> {}", oldCheckStatus, newCheckStatus);
+                                }
+                                if (entryStatusChanged) {
+                                    log.info("  - 入账状态: {} -> {}", oldEntryStatus, newEntryStatus);
+                                }
+                                
+                                boolean success = callStateChangeApi(dbRecord,
+                                        oldInvoiceStatus, oldCheckStatus, oldEntryStatus,
+                                        newInvoiceStatus, newCheckStatus, newEntryStatus,
+                                        fullInvoice.getGxsj());
+                                
+                                if (success) {
+                                    updateRecordWithFullData(dbRecord, fullInvoice);
+                                    updatedCount++;
+                                }
+                            } else {
+                                unchangedCount++;
+                                dbRecord.setUpdateTime(LocalDateTime.now());
+                                recordMapper.updateById(dbRecord);
+                            }
+                            
+                        } catch (Exception e) {
+                            log.error("处理发票状态同步异常: {} {}", dbRecord.getInvoiceCode(), dbRecord.getInvoiceNumber(), e);
+                        }
                     }
-                } else {
-                    unchangedCount++;
-                    // 更新时间戳
-                    dbRecord.setUpdateTime(LocalDateTime.now());
-                    recordMapper.updateById(dbRecord);
+                    
+                    // 释放该月的发票映射内存
+                    monthInvoiceMap.clear();
+                    monthInvoiceMap = null;
+                    
+                    // 每处理完一个月，建议GC
+                    System.gc();
                 }
                 
+                totalUpdatedCount += updatedCount;
+                totalUnchangedCount += unchangedCount;
+                totalNotFoundCount += notFoundCount;
+                totalProcessed += taxpayerRecords.size();
+                
+                log.info(">>> 纳税人 {} 处理完成: 更新={}, 未变化={}, 未找到={}", 
+                        taxNo, updatedCount, unchangedCount, notFoundCount);
+                
             } catch (Exception e) {
-                log.error("处理发票状态同步异常: {} {}", dbRecord.getInvoiceCode(), dbRecord.getInvoiceNumber(), e);
+                log.error(">>> 处理纳税人 {} 的发票失败", taxNo, e);
             }
         }
         
         long endTime = System.currentTimeMillis();
-        log.info("========== 优化版发票状态同步完成 ==========");
-        log.info("总处理数: {}", dbRecords.size());
-        log.info("状态已更新: {}", updatedCount);
-        log.info("状态未变化: {}", unchangedCount);
-        log.info("未找到发票: {}", notFoundCount);
+        log.info("========== 优化版V2发票状态同步完成 ==========");
+        log.info("总处理数: {}", totalProcessed);
+        log.info("状态已更新: {}", totalUpdatedCount);
+        log.info("状态未变化: {}", totalUnchangedCount);
+        log.info("未找到发票: {}", totalNotFoundCount);
         log.info("总耗时: {} 秒", (endTime - startTime) / 1000);
         log.info("==========================================");
     }
     
     /**
-     * 查询指定纳税人在指定日期范围内的所有全量发票
+     * 查询指定纳税人在指定日期范围内的所有全量发票，返回Map
      * 
      * @param taxNo 纳税人识别号
      * @param startDate 开始日期（yyyy-MM-dd）
      * @param endDate 结束日期（yyyy-MM-dd）
-     * @return 发票列表
+     * @return 发票映射表（发票代码_发票号码 -> 发票对象）
      */
-    private List<InvoiceFullItemDTO> queryFullInvoicesByTaxpayer(String taxNo, String startDate, String endDate) {
-        List<InvoiceFullItemDTO> allInvoices = new ArrayList<>();
+    private Map<String, InvoiceFullItemDTO> queryFullInvoicesByTaxpayerAsMap(String taxNo, String startDate, String endDate) {
+        Map<String, InvoiceFullItemDTO> invoiceMap = new HashMap<>();
         int pageNumber = 1;
         boolean hasMore = true;
         
@@ -484,24 +520,61 @@ public class InvoiceCollectionService {
             request.setPageNumber(String.valueOf(pageNumber));
             request.setPageSize(String.valueOf(PAGE_SIZE));
             
-            log.debug("    查询第 {} 页，纳税人: {}", pageNumber, taxNo);
+            // 记录请求参数
+            String requestJson = JSON.toJSONString(request);
+            log.info("    ========== 全量发票查询接口调用 ==========");
+            log.info("    > 接口URL: {}", fullQueryApiUrl);
+            log.info("    > 纳税人识别号: {}", taxNo);
+            log.info("    > 查询日期范围: {} 至 {}", startDate, endDate);
+            log.info("    > 页码: {}, 每页大小: {}", pageNumber, PAGE_SIZE);
+            log.info("    > 操作流水号: {}", request.getCzlsh());
+            log.info("    > 请求参数(JSON): {}", requestJson);
             
-            String responseStr = bwHttpUtil.httpPostRequest(fullQueryApiUrl, JSON.toJSONString(request), "json");
+            // 发送请求
+            long requestStartTime = System.currentTimeMillis();
+            String responseStr = bwHttpUtil.httpPostRequest(fullQueryApiUrl, requestJson, "json");
+            long requestEndTime = System.currentTimeMillis();
+            long requestDuration = requestEndTime - requestStartTime;
+            
+            // 记录响应参数（只记录长度，避免日志过大）
+            log.info("    > 接口响应耗时: {} ms", requestDuration);
+            log.info("    > 响应内容长度: {} 字符", responseStr != null ? responseStr.length() : 0);
             
             if (responseStr == null || responseStr.isEmpty()) {
-                log.warn("    全量发票查询返回为空，纳税人: {}, 页码: {}", taxNo, pageNumber);
+                log.warn("    > 全量发票查询返回为空，纳税人: {}, 页码: {}", taxNo, pageNumber);
+                log.info("    ========== 接口调用结束（响应为空） ==========\n");
                 break;
             }
             
             InvoiceFullQueryResponse response = JSON.parseObject(responseStr, InvoiceFullQueryResponse.class);
+            // 立即释放响应字符串内存
+            responseStr = null;
             
-            if (response == null || response.getData() == null || response.getData().isEmpty()) {
-                log.debug("    第 {} 页无数据", pageNumber);
+            if (response == null) {
+                log.warn("    > 响应解析失败");
+                log.info("    ========== 接口调用结束（解析失败） ==========\n");
                 break;
             }
             
-            allInvoices.addAll(response.getData());
-            log.debug("    第 {} 页返回 {} 条记录", pageNumber, response.getData().size());
+            log.info("    > 响应状态: success={}, code={}, msg={}", 
+                    response.getSuccess(), response.getCode(), response.getMsg());
+            
+            if (response.getData() == null || response.getData().isEmpty()) {
+                log.info("    > 第 {} 页无数据", pageNumber);
+                log.info("    ========== 接口调用结束（无数据） ==========\n");
+                break;
+            }
+            
+            log.info("    > 分页信息: 当前页={}, 每页大小={}, 总记录数={}", 
+                    response.getPageNumber(), response.getPageSize(), response.getTotal());
+            log.info("    > 第 {} 页返回 {} 条记录", pageNumber, response.getData().size());
+            log.info("    ========== 接口调用结束 ==========\n");
+            
+            // 直接放入Map，不保存List
+            for (InvoiceFullItemDTO invoice : response.getData()) {
+                String key = invoice.getFpdm() + "_" + invoice.getFphm();
+                invoiceMap.put(key, invoice);
+            }
             
             // 判断是否还有更多数据
             Integer total = response.getTotal();
@@ -510,9 +583,25 @@ public class InvoiceCollectionService {
             } else {
                 pageNumber++;
             }
+            
+            // 释放response内存
+            response = null;
         }
         
-        return allInvoices;
+        return invoiceMap;
+    }
+    
+    /**
+     * 查询指定纳税人在指定日期范围内的所有全量发票（返回List，保留兼容性）
+     * 
+     * @param taxNo 纳税人识别号
+     * @param startDate 开始日期（yyyy-MM-dd）
+     * @param endDate 结束日期（yyyy-MM-dd）
+     * @return 发票列表
+     */
+    private List<InvoiceFullItemDTO> queryFullInvoicesByTaxpayer(String taxNo, String startDate, String endDate) {
+        Map<String, InvoiceFullItemDTO> map = queryFullInvoicesByTaxpayerAsMap(taxNo, startDate, endDate);
+        return new ArrayList<>(map.values());
     }
 
     /**
