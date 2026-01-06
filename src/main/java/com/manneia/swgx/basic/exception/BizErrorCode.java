@@ -48,8 +48,9 @@ public enum BizErrorCode implements ErrorCode {
     /**
      * 远程调用返回结果失败
      */
-    REMOTE_CALL_RESPONSE_IS_FAILED("REMOTE_CALL_RESPONSE_IS_FAILED", "远程调用返回结果失败");
+    REMOTE_CALL_RESPONSE_IS_FAILED("REMOTE_CALL_RESPONSE_IS_FAILED", "远程调用返回结果失败"),
 
+    REQUEST_PARAM_NOT_EMPTY("REQUEST_PARAM_NOT_EMPTY", "请求参数不能为空");
     private final String code;
 
     private final String message;

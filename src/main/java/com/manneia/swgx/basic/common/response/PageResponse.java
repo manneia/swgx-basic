@@ -43,4 +43,12 @@ public class PageResponse<T> extends MultiResponse<T> {
         pageResponse.setTotalPage((pageSize + total - 1) / pageSize);
         return pageResponse;
     }
+
+    public static <T> PageResponse<T> error(String errorCode, String message) {
+        PageResponse<T> pageResponse = new PageResponse<>();
+        pageResponse.setSuccess(false);
+        pageResponse.setResponseCode(errorCode);
+        pageResponse.setResponseMessage(message);
+        return pageResponse;
+    }
 }

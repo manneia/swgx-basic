@@ -15,6 +15,7 @@ import com.manneia.swgx.basic.service.ZlInfoNrService;
 import com.manneia.swgx.basic.service.ZlInfoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,8 +35,10 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     public PageResponse<ZlInfo> queryKnowledge(QueryArticleDto queryArticleDto) {
         Assert.notNull(queryArticleDto, "请求参数不能为null");
-        Assert.notBlank(queryArticleDto.getKeyWord(), "关键字不能为空");
-        String keyWord = queryArticleDto.getKeyWord().trim();
+        if (StringUtils.isBlank(queryArticleDto.getKeyword())) {
+            return PageResponse.error("REQUEST_PARAM_NOT_EMPTY","关键字不能为空");
+        }
+        String keyWord = queryArticleDto.getKeyword().trim();
         String[] keyWordList = keyWord.split(" ");
         try {
             Page<ZlInfo> page = zlInfoService.lambdaQuery()

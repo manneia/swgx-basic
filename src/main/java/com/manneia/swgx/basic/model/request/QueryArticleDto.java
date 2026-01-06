@@ -10,7 +10,7 @@ import lombok.Data;
 @Data
 public class QueryArticleDto {
 
-    private String keyWord;
+    private String keyword;
 
     private String articleCode;
 
