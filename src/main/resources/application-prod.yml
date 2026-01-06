@@ -1,5 +1,5 @@
 server:
-  port: 7094
+  port: 7091
   servlet:
     context-path: /customize
 spring:
