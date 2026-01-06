@@ -16,6 +16,11 @@ public enum RepoErrorCode implements ErrorCode {
     UNKNOWN_ERROR("UNKNOWN_ERROR", "未知错误"),
 
     /**
+     * 数据库查询失败
+     */
+    SELECT_FAILED("SELECT_FAILED", "数据库查询失败"),
+
+    /**
      * 数据库插入失败
      */
     INSERT_FAILED("INSERT_FAILED", "数据库插入失败"),

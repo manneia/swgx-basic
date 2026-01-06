@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.manneia.swgx.basic.mapper.ZlInfoNrMapper">
+
+    <resultMap id="BaseResultMap" type="com.manneia.swgx.basic.model.domain.ZlInfoNr">
+        <id property="dataCode" column="ZLCODE"/>
+        <result property="dataZy" column="ZLZY"/>
+        <result property="dataFlag" column="ZLFLAG"/>
+        <result property="isReplace" column="ISREPLACE"/>
+        <result property="dataContent" column="ZLNR"/>
+        <result property="dataWbContent" column="ZLNRWB"/>
+        <result property="dataCljNr" column="ZLCLJNR"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        ZLCODE,dataZy,dataFlag,isReplace,dataContent,dataWbContent,
+        dataCljNr
+    </sql>
+</mapper>

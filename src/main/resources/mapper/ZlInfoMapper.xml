@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.manneia.swgx.basic.mapper.ZlInfoMapper">
+
+    <resultMap id="BaseResultMap" type="com.manneia.swgx.basic.model.domain.ZlInfo">
+            <id property="dataCode" column="ZLCODE" />
+            <result property="dataFlowId" column="ZLWFID" />
+            <result property="activityId" column="ACTIVITYID" />
+            <result property="dataBrevityCode" column="ZLJM" />
+            <result property="dataTitle" column="ZLTITLE" />
+            <result property="dataKeyWord" column="ZLGJZ" />
+            <result property="dataFlag" column="ZLFLAG" />
+            <result property="dataType" column="ZLTYPE" />
+            <result property="dataIndustryType" column="ZLHYTYPE" />
+            <result property="dataAudioFile" column="ZLLYWJ" />
+            <result property="dataFaxDocument" column="ZLCZWJ" />
+            <result property="lrr" column="ZLLRR" />
+            <result property="lrSj" column="ZLLRSJ" />
+            <result property="lrDw" column="ZLLRDW" />
+            <result property="zt" column="ZLZT" />
+            <result property="sfYx" column="ZLSFYX" />
+            <result property="sfFb" column="ZLSFFB" />
+            <result property="fbr" column="ZLFBR" />
+            <result property="ly" column="ZLLY" />
+            <result property="sz" column="ZLSZ" />
+            <result property="wh" column="ZLWH" />
+            <result property="fwDw" column="ZLFWDW" />
+            <result property="fwRq" column="ZLBFRQ" />
+            <result property="sqRq" column="ZLSXRQ" />
+            <result property="ssRq" column="ZLSSRQ" />
+            <result property="wdDj" column="ZLWJDJ" />
+            <result property="syDj" column="ZLSYDJ" />
+            <result property="currentShr" column="ZLNOWSHR" />
+            <result property="currentShJs" column="ZLNOWSHJS" />
+            <result property="currentClJg" column="ZLNOWJG" />
+            <result property="currentClBm" column="ZLNOWBM" />
+            <result property="zhCzr" column="ZLZHCZR" />
+            <result property="zhCzSj" column="ZLZHCZSJ" />
+            <result property="qcCzr" column="LASTCZR" />
+            <result property="zsQzz" column="ZLQZZ" />
+            <result property="wxYy" column="ZLWXYY" />
+            <result property="zlZy" column="ZLZY" />
+            <result property="zlPz" column="ZLPZ" />
+            <result property="zlSfGk" column="ZLSFGK" />
+            <result property="zlFbRq" column="ZLFBRQ" />
+            <result property="cxYy" column="ZLCXYY" />
+            <result property="sfNzOa" column="ZLNZOA" />
+            <result property="zOaCode" column="ZLOAID" />
+            <result property="zlSsDq" column="ZLDQ" />
+            <result property="zlSsDqMc" column="ZLDQMC" />
+            <result property="zlFwZz" column="ZLFWZG" />
+            <result property="sfDl" column="ZLSFDL" />
+            <result property="sfZcYh" column="ZLSFZCYH" />
+            <result property="syDxLx" column="ZLDXLX" />
+            <result property="currentVersionCode" column="ZLDQBBH" />
+            <result property="dfFg" column="ZLDFFG" />
+            <result property="zlXf" column="ZLXF" />
+            <result property="ywToZskCzr" column="ZLYWCZR" />
+            <result property="dataTypeMc" column="ZLTYPEMC" />
+            <result property="dataIndustryTypeMc" column="ZLHYTYPEMC" />
+            <result property="dataFz" column="ZLFZ" />
+            <result property="dataIsDelete" column="ZLISDEL" />
+            <result property="dataWzFgCode" column="ZLWZFGBH" />
+            <result property="syDxTypeMc" column="ZLDXLXMC" />
+            <result property="flowId" column="ZLCXLCID" />
+            <result property="updateTime" column="GXSJ" />
+            <result property="version" column="BBH" />
+            <result property="jhZt" column="JHZT" />
+            <result property="xzQh" column="XZQH" />
+            <result property="cxSqr" column="ZLCXSQR" />
+            <result property="dataSsId" column="ZLDLSSID" />
+            <result property="dataDlXh" column="ZLDLXH" />
+            <result property="zlSxClBs" column="ZLSXCZBS" />
+            <result property="dataSfJs" column="ZLSFJS" />
+            <result property="dataSfZjSh" column="ZLSFZJSH" />
+            <result property="dataZgDw" column="ZLZGDW" />
+            <result property="dataZgDwMc" column="ZLZGDWMC" />
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        ZLCODE,ZLWFID,ACTIVITYID,ZLJM,ZLTITLE,ZLGJZ,
+        ZLFLAG,ZLTYPE,ZLHYTYPE,ZLLYWJ,ZLCZWJ,
+        ZLLRR,ZLLRSJ,ZLLRDW,ZLZT,ZLSFYX,
+        ZLSFFB,ZLFBR,ZLLY,ZLSZ,ZLWH,
+        ZLFWDW,ZLBFRQ,ZLSXRQ,ZLSSRQ,ZLWJDJ,
+        ZLSYDJ,ZLNOWSHR,ZLNOWSHJS,ZLNOWJG,ZLNOWBM,
+        ZLZHCZR,ZLZHCZSJ,LASTCZR,ZLQZZ,ZLWXYY,
+        ZLZY,ZLPZ,ZLSFGK,ZLFBRQ,ZLCXYY,
+        ZLNZOA,ZLOAID,ZLDQ,ZLDQMC,ZLFWZG,
+        ZLSFDL,ZLSFZCYH,ZLDXLX,ZLDQBBH,ZLDFFG,
+        ZLXF,ZLYWCZR,ZLTYPEMC,ZLHYTYPEMC,ZLFZ,
+        ZLISDEL,ZLWZFGBH,ZLDXLXMC,ZLCXLCID,GXSJ,
+        BBH,JHZT,XZQH,ZLCXSQR,ZLDLSSID,
+        ZLDLXH,ZLSXCZBS,ZLSFJS,ZLSFZJSH,ZLZGDW,
+        ZLZGDWMC
+    </sql>
+</mapper>

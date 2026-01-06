@@ -23,7 +23,7 @@ public class MyBatisPlusConfig {
         // 防止全表更新与删除插件
         mybatisPlusInterceptor.addInnerInterceptor(new BlockAttackInnerInterceptor());
         // 分页
-        mybatisPlusInterceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        mybatisPlusInterceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.ORACLE));
         return mybatisPlusInterceptor;
     }
 }
