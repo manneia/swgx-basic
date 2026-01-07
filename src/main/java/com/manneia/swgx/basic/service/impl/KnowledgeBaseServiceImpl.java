@@ -66,7 +66,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
         Assert.notBlank(queryArticleDto.getArticleCode(), "文章代码不能为空");
         try {
             ZlInfoNr result = zlInfoNrService.lambdaQuery()
-                    .like(ZlInfoNr::getDataCode, queryArticleDto.getArticleCode())
+                    .eq(ZlInfoNr::getDataCode, queryArticleDto.getArticleCode())
                     .one();
             return SingleResponse.of(result);
         } catch (Exception e) {

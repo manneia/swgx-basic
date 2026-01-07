@@ -1,7 +1,7 @@
 server:
-  port: 7091
+  port: 8888
   servlet:
-    context-path: /customize
+    context-path: /zsk
 spring:
   datasource:
     url: jdbc:oracle:thin:@192.168.1.213:1521/shbw_tcc
