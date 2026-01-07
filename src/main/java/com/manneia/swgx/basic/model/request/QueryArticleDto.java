@@ -12,6 +12,8 @@ public class QueryArticleDto {
 
     private String keyword;
 
+    private String brevityCode;
+
     private String articleCode;
 
     private Long currentNo;

@@ -35,8 +35,8 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     public PageResponse<ZlInfo> queryKnowledge(QueryArticleDto queryArticleDto) {
         Assert.notNull(queryArticleDto, "请求参数不能为null");
-        if (StringUtils.isBlank(queryArticleDto.getKeyword())) {
-            return PageResponse.error("REQUEST_PARAM_NOT_EMPTY","关键字不能为空");
+        if (StringUtils.isBlank(queryArticleDto.getKeyword()) && StringUtils.isBlank(queryArticleDto.getBrevityCode())) {
+            return PageResponse.error("REQUEST_PARAM_NOT_EMPTY", "关键字和简码不能同时为空");
         }
         String keyWord = queryArticleDto.getKeyword().trim();
         String[] keyWordList = keyWord.split(" ");
@@ -51,7 +51,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                                 wrapper.or().like(ZlInfo::getDataKeyWord, kw);
                             }
                         }
-                    }).last("ORDER BY GXSJ DESC NULLS LAST")
+                    })
+                    .and(wrapper -> wrapper.like(StringUtils.isNotBlank(queryArticleDto.getBrevityCode()), ZlInfo::getDataBrevityCode, queryArticleDto.getBrevityCode()))
+                    .last("ORDER BY GXSJ DESC NULLS LAST")
                     .page(new Page<>(queryArticleDto.getCurrentNo(), queryArticleDto.getCurrentSize()));
             return PageResponse.of(page.getRecords(), (int) page.getTotal(), (int) page.getSize(), (int) page.getCurrent());
         } catch (Exception e) {
