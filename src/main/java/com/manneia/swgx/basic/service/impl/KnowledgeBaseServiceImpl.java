@@ -51,7 +51,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                                 wrapper.or().like(ZlInfo::getDataKeyWord, kw);
                             }
                         }
-                    })
+                    }).orderByDesc(ZlInfo::getUpdateTime)
                     .page(new Page<>(queryArticleDto.getCurrentNo(), queryArticleDto.getCurrentSize()));
             return PageResponse.of(page.getRecords(), (int) page.getTotal(), (int) page.getSize(), (int) page.getCurrent());
         } catch (Exception e) {
