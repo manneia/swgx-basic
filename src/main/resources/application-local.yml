@@ -4,9 +4,9 @@ server:
     context-path: /customize
 
 customize:
-  query-company-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/queryUniqueSign
-  query-goods-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/query/goods
-  push-invoice-doc-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/addReceiptUrl
+  query-company-info-url: https://api.baiwangjs.com/swgx-saas/agentinvoiceservice-cloudservice-cloudservice/agentiscloud/cloud/queryUniqueSign
+  query-goods-info-url: https://api.baiwangjs.com/swgx-saas/agentinvoiceservice-cloudservice-cloudservice/agentiscloud/cloud/query/goods
+  push-invoice-doc-url: https://api.baiwangjs.com/swgx-saas/agentinvoiceservice-cloudservice-cloudservice/agentiscloud/cloud/addReceiptUrl
 
 swgx:
   http:
