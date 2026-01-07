@@ -11,10 +11,13 @@
 
     <!--默认配置-->
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
-    <!--配置控制台(CONSOLE)-->
-    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <!--配置控制台(CONSOLE) - 彩色输出-->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%green(%d{yyyy-MM-dd HH:mm:ss}) %highlight([%thread]) %cyan(%-5level) %yellow(%logger{36}) - %msg%n</pattern>
+        </encoder>
+    </appender>
     <!--配置文件(FILE)-->
-    <include resource="org/springframework/boot/logging/logback/file-appender.xml"/>
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <!-- 日志文件路径 -->
         <file>${LOG_FILE}</file>
