@@ -52,7 +52,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
     @Override
     public SingleResponse<PushInvoiceDocResponse> pushInvoiceDoc(PushInvoiceDocRequest pushInvoiceDocRequest) {
         PushInvoiceDocResponse pushInvoiceDocResponse = new PushInvoiceDocResponse();
-        pushInvoiceDocResponse.setDocNo(pushInvoiceDocResponse.getDocNo());
+        pushInvoiceDocResponse.setDocNo(pushInvoiceDocRequest.getDocNo());
         // 1. 获取企业信息
         JSONObject getCompanyInfoRequest = new JSONObject();
         getCompanyInfoRequest.put(BasicKey.TAXPAYER_NAME, pushInvoiceDocRequest.getSellerName());
@@ -137,14 +137,15 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
             String goodsDiscountType = invoiceDocDetail.getGoodsDiscountType();
             handlerGoodsList(goodsDiscountType, invoiceDocDetail, goodsList, goodsDetails, discountGoodsList, originalGoodsTotalPrice, discountGoodsTotalPrice);
         }
+        // 减去原价商品
+        BigDecimal discountedAmount = invoiceTotalPriceTax.subtract(originalGoodsTotalPrice.get());
+        BigDecimal discountPrice = discountedAmount.subtract(discountGoodsTotalPrice.get());
+        BigDecimal discountRate = discountPrice.divide(discountGoodsTotalPrice.get(), 7, RoundingMode.HALF_UP);
+        Map<String, PushInvoiceDocDetail> docDetailMap = invoiceDocDetails.stream().collect(Collectors.toMap(PushInvoiceDocDetail::getGoodsPersonalCode, invoiceDocDetail -> invoiceDocDetail));
         // 处理计算折扣商品
-        if (CollUtil.isNotEmpty(discountGoodsList)) {
-            // 减去原价商品
-            BigDecimal discountedAmount = invoiceTotalPriceTax.subtract(originalGoodsTotalPrice.get());
-            BigDecimal discountPrice = discountedAmount.subtract(discountGoodsTotalPrice.get());
-            BigDecimal discountRate = discountPrice.divide(discountGoodsTotalPrice.get(), 7, RoundingMode.HALF_UP);
+        if (CollUtil.isNotEmpty(discountGoodsList) && discountRate.compareTo(BigDecimal.ONE) < 0) {
+            log.info("处理计算折扣商品");
             // 根据折扣率处理待折扣商品，生成折扣行，折扣行金额为负数，fphxz为1，折扣额为含税金额*折扣率，，被折扣行金额为整数，fphxz为2
-            Map<String, PushInvoiceDocDetail> docDetailMap = invoiceDocDetails.stream().collect(Collectors.toMap(PushInvoiceDocDetail::getGoodsPersonalCode, invoiceDocDetail -> invoiceDocDetail));
             try {
                 for (int i = 0; i < discountGoodsList.size(); i++) {
                     JSONObject goodInfo = discountGoodsList.getJSONObject(i);
@@ -160,17 +161,32 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                     goodsList.add(originalGoodsLine);
                     // 创建折扣行（fphxz=1，金额为负数）
                     JSONObject discountLine = getDiscountGoodsLine(pushInvoiceDocDetail, goodInfo, discountRate);
-                    if (goodsList.isEmpty()) {
-                        discountLine.put(BasicKey.SERIAL_NUM, 1);
-                    } else {
-                        discountLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
-                    }
+                    discountLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
                     goodsList.add(discountLine);
                 }
             } catch (Exception e) {
                 log.error("折扣行处理失败:{}", toJSONString(e));
                 throw new BizException("折扣行处理失败", BizErrorCode.DISCOUNT_GOODS_LIST_HANDLER_ERROR);
             }
+        } else if (CollUtil.isNotEmpty(discountGoodsList) && discountRate.compareTo(BigDecimal.ONE) == 0) {
+            log.info("折扣率为1，创建原价行");
+            for (int i = 0; i < discountGoodsList.size(); i++) {
+                JSONObject goodInfo = discountGoodsList.getJSONObject(i);
+                String goodsZxbm = goodInfo.getString(BasicKey.GOODS_PERSONAL_CODE);
+                PushInvoiceDocDetail pushInvoiceDocDetail = docDetailMap.get(goodsZxbm);
+                // 折扣率为1，创建原价行
+                JSONObject originalGoodsLine = getOriginalGoodsLine(pushInvoiceDocDetail, goodInfo);
+                originalGoodsLine.replace(BasicKey.INVOICE_ITEM_TYPE, "0");
+                if (goodsList.isEmpty()) {
+                    originalGoodsLine.put(BasicKey.SERIAL_NUM, 1);
+                } else {
+                    originalGoodsLine.put(BasicKey.SERIAL_NUM, goodsList.size() + 1);
+                }
+                goodsList.add(originalGoodsLine);
+            }
+        } else {
+            log.error("折扣率计算错误，结果大于1：{}", discountRate);
+            throw new BizException("折扣率计算错误，结果大于1", BizErrorCode.DISCOUNT_RATE_ERROR);
         }
         pushInvoiceDocJsonRequest.put(BasicKey.PRODUCT_PARAMS, goodsList);
         BigDecimal totalTax = BigDecimal.ZERO;
