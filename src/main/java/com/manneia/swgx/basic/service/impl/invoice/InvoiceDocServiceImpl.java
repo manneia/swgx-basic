@@ -359,7 +359,9 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                 String code = pushDocResult.getString(BasicKey.RESPONSE_CODE);
                 if (StringUtils.isNotBlank(code) && "0".equals(code)) {
                     pushInvoiceDocResponse.setSuccess(true);
-                    pushInvoiceDocResponse.setIssueUrl(pushDocResult.getString(BasicKey.INTERFACE_DATA));
+                    String waitHandlerUrl = pushDocResult.getString(BasicKey.INTERFACE_DATA);
+                    String issueUrl = waitHandlerUrl.startsWith("http://") ? waitHandlerUrl.replaceFirst("http://", "https://") : waitHandlerUrl;
+                    pushInvoiceDocResponse.setIssueUrl(issueUrl);
                 } else {
                     pushInvoiceDocResponse.setSuccess(false);
                     pushInvoiceDocResponse.setErrorMessage(pushDocResult.getString(BasicKey.ERROR_MESSAGE));
