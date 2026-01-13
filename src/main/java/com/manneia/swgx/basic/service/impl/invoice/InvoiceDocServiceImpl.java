@@ -139,8 +139,7 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
         }
         // 减去原价商品
         BigDecimal discountedAmount = invoiceTotalPriceTax.subtract(originalGoodsTotalPrice.get());
-        BigDecimal discountPrice = discountedAmount.subtract(discountGoodsTotalPrice.get());
-        BigDecimal discountRate = discountPrice.divide(discountGoodsTotalPrice.get(), 7, RoundingMode.HALF_UP);
+        BigDecimal discountRate = discountedAmount.divide(discountGoodsTotalPrice.get(), 7, RoundingMode.HALF_UP);
         Map<String, PushInvoiceDocDetail> docDetailMap = invoiceDocDetails.stream().collect(Collectors.toMap(PushInvoiceDocDetail::getGoodsPersonalCode, invoiceDocDetail -> invoiceDocDetail));
         // 处理计算折扣商品
         if (CollUtil.isNotEmpty(discountGoodsList) && discountRate.compareTo(BigDecimal.ONE) < 0) {
