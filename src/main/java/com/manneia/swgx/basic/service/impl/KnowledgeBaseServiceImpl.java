@@ -52,7 +52,8 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                             }
                         }
                     })
-                    .and(wrapper -> wrapper.like(StringUtils.isNotBlank(queryArticleDto.getBrevityCode()), ZlInfo::getDataBrevityCode, queryArticleDto.getBrevityCode()))
+                    .and(StringUtils.isNotBlank(queryArticleDto.getBrevityCode()),
+                         wrapper -> wrapper.like(ZlInfo::getDataBrevityCode, queryArticleDto.getBrevityCode()))
                     .last("ORDER BY GXSJ DESC NULLS LAST")
                     .page(new Page<>(queryArticleDto.getCurrentNo(), queryArticleDto.getCurrentSize()));
             return PageResponse.of(page.getRecords(), (int) page.getTotal(), (int) page.getSize(), (int) page.getCurrent());
