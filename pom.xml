@@ -132,6 +132,7 @@
                 <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.manneia.swgx.basic.SwgxBasicApplication</mainClass>
+                    <finalName>knowledge-base</finalName>
                 </configuration>
                 <executions>
                     <execution>
