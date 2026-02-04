@@ -5,29 +5,19 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.manneia.swgx.basic.common.constant.TaxpayerRegistry;
 import com.manneia.swgx.basic.common.request.InvoiceCollectionQueryRequest;
 import com.manneia.swgx.basic.common.request.InvoiceFullQueryRequest;
-import com.manneia.swgx.basic.common.request.InvoiceHistoryQueryRequest;
 import com.manneia.swgx.basic.common.request.InvoiceSingleQueryRequest;
 import com.manneia.swgx.basic.common.request.InvoiceStateChangeRequest;
-import com.manneia.swgx.basic.common.response.InvoiceCollectionResponse;
-import com.manneia.swgx.basic.common.response.InvoiceFullItemDTO;
-import com.manneia.swgx.basic.common.response.InvoiceFullQueryResponse;
-import com.manneia.swgx.basic.common.response.InvoiceHistoryItemDTO;
-import com.manneia.swgx.basic.common.response.InvoiceHistoryQueryResponse;
-import com.manneia.swgx.basic.common.response.InvoiceSingleQueryResponse;
-import com.manneia.swgx.basic.common.response.InvoiceStateChangeResponse;
+import com.manneia.swgx.basic.common.response.*;
 import com.manneia.swgx.basic.mapper.InvoiceCollectionRecordMapper;
 import com.manneia.swgx.basic.mapper.InvoiceHistoryMapper;
 import com.manneia.swgx.basic.mapper.InvoiceStatusChangeLogMapper;
 import com.manneia.swgx.basic.model.entity.InvoiceCollectionRecord;
-import com.manneia.swgx.basic.model.entity.InvoiceHistory;
 import com.manneia.swgx.basic.model.entity.InvoiceStatusChangeLog;
 import com.manneia.swgx.basic.service.support.InvoiceApiSupport;
 import com.manneia.swgx.basic.utils.BwHttpUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -169,7 +159,7 @@ public class InvoiceCollectionService {
         boolean hasMore = true;
 
         while (hasMore) {
-            InvoiceCollectionQueryRequest request = buildRequest(taxNo, startDate, endDate, pageNumber, PAGE_SIZE);
+            InvoiceCollectionQueryRequest request = buildRequest(taxNo, startDate, endDate);
             log.info("调用发票采集接口，url={}，纳税人={}，请求参数={}", collectionApiUrl, taxNo, JSON.toJSONString(request));
 
             String responseStr = bwHttpUtil.httpPostRequest(collectionApiUrl, JSON.toJSONString(request), "json");
@@ -188,7 +178,7 @@ public class InvoiceCollectionService {
                 break;
             }
 
-            log.info("纳税人 {} 第 {} 页返回 {} 条发票数据", taxNo, pageNumber, response.getData().size());
+            log.info("纳税人 {} 发票数据", taxNo, pageNumber, response.getData().size());
             response.getData().forEach(this::saveIfAbsent);
 
             long total = response.getTotal() == null ? 0 : response.getTotal();
@@ -201,14 +191,12 @@ public class InvoiceCollectionService {
         }
     }
 
-    private InvoiceCollectionQueryRequest buildRequest(String taxNo, String startDate, String endDate, int pageNumber, int pageSize) {
+    private InvoiceCollectionQueryRequest buildRequest(String taxNo, String startDate, String endDate) {
         InvoiceCollectionQueryRequest request = new InvoiceCollectionQueryRequest();
         request.setCzlsh(UUID.randomUUID().toString().replace("-", ""));
         request.setGssh(taxNo);
         request.setCjrqq(startDate); // 采集日期起：昨天
         request.setCjrqz(endDate);  // 采集日期止：今天
-        request.setPageNumber(pageNumber);
-        request.setPageSize(pageSize);
         return request;
     }
 

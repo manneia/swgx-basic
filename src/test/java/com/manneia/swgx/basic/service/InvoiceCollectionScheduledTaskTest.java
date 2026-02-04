@@ -3,7 +3,6 @@ package com.manneia.swgx.basic.service;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.scheduling.annotation.Scheduled;
 
 import javax.annotation.Resource;
 import java.time.Duration;
@@ -14,8 +13,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 @SpringBootTest
 @Slf4j
 class InvoiceCollectionScheduledTaskTest {
@@ -24,7 +21,8 @@ class InvoiceCollectionScheduledTaskTest {
 
     @Test
     public void collectDailyInvoices() {
-        LocalDate targetDate = LocalDate.now();
+//        LocalDate targetDate = LocalDate.now();
+        LocalDate targetDate = LocalDate.of(2025, 12, 25);
         invoiceCollectionService.collectInvoicesByDate(targetDate);
     }
 
