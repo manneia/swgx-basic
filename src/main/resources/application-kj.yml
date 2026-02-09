@@ -32,7 +32,7 @@ invoice:
   full:
     query:
       api:
-        url: http://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/jxqlfpcx # 全量进项发票查询接口地址
+        url: https://api.baiwangjs.com/swgx-saas/swgx-api/interface/jxgl/jxfpcx # 进项发票查询接口地址
   state:
     change:
       api:
