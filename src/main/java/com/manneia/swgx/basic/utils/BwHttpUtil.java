@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static com.alibaba.fastjson.util.IOUtils.UTF8;
@@ -89,15 +90,16 @@ public class BwHttpUtil {
             while (it.hasNext()) {
                 String key = (String) it.next();
                 httpPost.setHeader(key, (String) header.get(key));
-                log.info("key值：" + key + "对应值：" + (String) header.get(key));
+                log.info("key值：{}对应值：{}", key, header.get(key));
             }
 
             response = httpClient.execute(httpPost);
+            log.info("响应信息:{}", response);
         } catch (Exception e) {
             log.error(e.getMessage());
         }
         String result = "";
-        if (response.getStatusLine().getStatusCode() == 200) {
+        if (Objects.requireNonNull(response).getStatusLine().getStatusCode() == 200) {
             try {
                 result = EntityUtils.toString(response.getEntity(), "utf-8");
             } catch (IOException e) {
