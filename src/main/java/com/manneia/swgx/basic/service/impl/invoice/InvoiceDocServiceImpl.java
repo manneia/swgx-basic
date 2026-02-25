@@ -477,8 +477,18 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
                 String goodsZxbm = goodInfo.getString(BasicKey.GOODS_PERSONAL_CODE);
                 PushInvoiceDocDetail detail = docDetailMap.get(goodsZxbm);
 
-                addOriginalGoodsLine(detail, goodInfo, targetGoodsList);
-                addDiscountLineIfNecessary(detail, goodInfo, discountRate, goodsZxbm, targetGoodsList);
+                // 先计算折扣金额，决定如何处理
+                BigDecimal discountAmount = calculateDiscountAmount(detail, goodInfo, discountRate);
+
+                if (discountAmount.compareTo(BigDecimal.ZERO) == 0) {
+                    // 折扣金额为0，创建不参与折扣的商品行（行性质为"0"）
+                    addNonDiscountGoodsLine(detail, goodInfo, targetGoodsList);
+                    log.info("商品编码: {}, 折扣金额为0, 创建不参与折扣的商品行", goodsZxbm);
+                } else {
+                    // 折扣金额不为0，创建原价行（行性质"2"）和折扣行（行性质"1"）
+                    addOriginalGoodsLine(detail, goodInfo, targetGoodsList);
+                    addDiscountLineWithAmount(detail, goodInfo, discountRate, discountAmount, goodsZxbm, targetGoodsList);
+                }
             }
         } catch (Exception e) {
             log.error("折扣行处理失败:{}", toJSONString(e));
@@ -496,20 +506,34 @@ public class InvoiceDocServiceImpl implements InvoiceDocService {
     }
 
     /**
-     * 添加折扣行（如果折扣金额不为0）
+     * 计算折扣金额
      */
-    private void addDiscountLineIfNecessary(PushInvoiceDocDetail detail, JSONObject goodInfo,
-                                            BigDecimal discountRate, String goodsZxbm, JSONArray targetGoodsList) {
-        JSONObject discountLine = getDiscountGoodsLine(detail, goodInfo, discountRate);
-        BigDecimal discountAmount = discountLine.getBigDecimal(BasicKey.GOODS_TOTAL_PRICE_TAX);
+    private static BigDecimal calculateDiscountAmount(PushInvoiceDocDetail detail, JSONObject goodInfo, BigDecimal discountRate) {
+        BigDecimal goodsPrice = goodInfo.getBigDecimal(BasicKey.GOODS_PRICE);
+        BigDecimal originalPrice = goodsPrice.multiply(detail.getGoodsQuantity());
+        return originalPrice.multiply(discountRate).setScale(2, RoundingMode.HALF_UP);
+    }
 
-        if (discountAmount.compareTo(BigDecimal.ZERO) != 0) {
-            setSerialNum(discountLine, targetGoodsList);
-            targetGoodsList.add(discountLine);
-            log.info("商品编码: {}, 添加折扣行, 折扣金额: {}", goodsZxbm, discountAmount);
-        } else {
-            log.info("商品编码: {}, 折扣金额为0, 跳过添加折扣行", goodsZxbm);
-        }
+    /**
+     * 添加不参与折扣的商品行（行性质为"0"）
+     */
+    private void addNonDiscountGoodsLine(PushInvoiceDocDetail detail, JSONObject goodInfo, JSONArray targetGoodsList) {
+        JSONObject goodsLine = getOriginalGoodsLine(detail, goodInfo);
+        goodsLine.replace(BasicKey.INVOICE_ITEM_TYPE, "0");
+        setSerialNum(goodsLine, targetGoodsList);
+        targetGoodsList.add(goodsLine);
+    }
+
+    /**
+     * 添加折扣行（已知折扣金额）
+     */
+    private void addDiscountLineWithAmount(PushInvoiceDocDetail detail, JSONObject goodInfo,
+                                           BigDecimal discountRate, BigDecimal discountAmount,
+                                           String goodsZxbm, JSONArray targetGoodsList) {
+        JSONObject discountLine = getDiscountGoodsLine(detail, goodInfo, discountRate);
+        setSerialNum(discountLine, targetGoodsList);
+        targetGoodsList.add(discountLine);
+        log.info("商品编码: {}, 添加折扣行, 折扣金额: {}", goodsZxbm, discountAmount);
     }
 
     /**
