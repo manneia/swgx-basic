@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration debug="false">
+    <!--日志文件主目录：使用绝对路径，支持通过环境变量覆盖-->
+    <property name="LOG_HOME" value="${LOG_PATH:-log-gxh}"/>
+    <property name="APP_NAME" value="basic"/>
+    <property name="LOG_FILE" value="${LOG_HOME}/${APP_NAME}.log"/>
+    <property name="ROLLING_FILE_NAME_PATTERN" value="${LOG_HOME}/%d{yyyy-MM}/${APP_NAME}.%d{yyyy-MM-dd}.%i.gz"/>
+    <property name="LOG_FILE_MAX_HISTORY" value="60"/>
+    <property name="LOG_FILE_MAX_SIZE" value="50MB"/>
+
+
+    <!--默认配置-->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <!--配置控制台(CONSOLE)-->
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- 自定义 FILE appender，不使用 Spring Boot 默认的 file-appender.xml -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${ROLLING_FILE_NAME_PATTERN}</fileNamePattern>
+            <maxFileSize>${LOG_FILE_MAX_SIZE}</maxFileSize>
+            <maxHistory>${LOG_FILE_MAX_HISTORY}</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <!--root节点 全局日志级别，用来指定最基础的日志输出级别-->
+    <root level="INFO">
+        <appender-ref ref="FILE"/>
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <logger name="cn.shiwen.gxhfw.mapper" level="DEBUG"/>
+
+</configuration>
