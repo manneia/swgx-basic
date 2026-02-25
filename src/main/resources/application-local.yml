@@ -10,6 +10,10 @@ spring:
       username:
       password:
       driver-class-name: com.mysql.cj.jdbc.Driver
+logging:
+  config: classpath:config/logback-spring.xml
+  level:
+    root: INFO
 customize:
   query-company-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/queryUniqueSign
   query-goods-info-url: https://swgxs.baiwangjs.com/agentiscloud/cloud/query/goods
