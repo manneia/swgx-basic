@@ -7,7 +7,10 @@ customize:
   query-company-info-url: https://api.baiwangjs.com/swgx-saas/agentinvoiceservice-cloudservice-cloudservice/agentiscloud/cloud/queryUniqueSign
   query-goods-info-url: https://api.baiwangjs.com/swgx-saas/agentinvoiceservice-cloudservice-cloudservice/agentiscloud/cloud/query/goods
   push-invoice-doc-url: https://api.baiwangjs.com/swgx-saas/agentinvoiceservice-cloudservice-cloudservice/agentiscloud/cloud/addReceiptUrl
-
+logging:
+  config: classpath:config/logback-spring.xml
+  level:
+    root: INFO
 swgx:
   http:
     ak_id: 91310000MA1HNBYL8J_xOgNgw4t9JD88Z705BXj
